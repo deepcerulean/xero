@@ -36,7 +36,7 @@ describe Parser do
       tokens = tokenizer.analyze('hello -> world')
       ast = parser.analyze(tokens)
       expect(ast).to be_a(ExpressionNode)
-      expect(ast).to be_a(OperatorNode)
+      expect(ast).to be_a(OperationNode)
 
       node = ast
       expect(node.left).to be_a(LabelNode)
@@ -52,7 +52,7 @@ describe Parser do
       tokens = tokenizer.analyze('hello -> there -> world')
       ast = parser.analyze(tokens)
       expect(ast).to be_a(ExpressionNode)
-      expect(ast).to be_a(OperatorNode)
+      expect(ast).to be_a(OperationNode)
 
       root_node = ast
       expect(root_node.value).to eq(:arrow)
@@ -60,10 +60,68 @@ describe Parser do
       expect(root_node.left.value).to eq('hello')
 
       right_node = root_node.right
-      expect(right_node).to be_a(OperatorNode)
+      expect(right_node).to be_a(OperationNode)
       expect(right_node.value).to eq(:arrow)
       expect(right_node.left.value).to eq('there')
       expect(right_node.right.value).to eq('world')
     end
+
+    it 'can analyze a definition' do
+      tokens = tokenizer.analyze('hello: there -> world')
+      ast = parser.analyze(tokens)
+      expect(ast).to be_a(ExpressionNode)
+      expect(ast).to be_a(OperationNode)
+
+      root_node = ast
+      expect(root_node.value).to eq(:defn)
+      expect(root_node.left).to be_a(LabelNode)
+      expect(root_node.left.value).to eq('hello')
+
+      right_node = root_node.right
+      expect(right_node).to be_a(OperationNode)
+      expect(right_node.value).to eq(:arrow)
+      expect(right_node.left.value).to eq('there')
+      expect(right_node.right.value).to eq('world')
+    end
+  end
+end
+
+describe Interpreter do
+  subject(:interpreter) { Interpreter.new }
+  let(:tokenizer)       { Tokenizer.new }
+  let(:parser)          { Parser.new }
+
+  it 'can turn an ast into a command' do
+    tokens = tokenizer.analyze('hello: there -> world')
+    ast = parser.analyze(tokens)
+
+    cmd = interpreter.analyze(ast)
+
+    expect(cmd).to be_a(Command)
+    expect(cmd).to be_a(CreateDefinitionCommand)
+
+    expect(cmd.term).to eq('hello')
+    expect(cmd.definition).to be_a(ComposeElementsCommand)
+    expect(cmd.definition.left).to eq('there')
+    expect(cmd.definition.right).to eq('world')
+  end
+end
+
+describe Processor do
+  subject(:processor) { Processor.new(environment: environment) }
+  let(:environment) { SimpleEnvironment.new }
+
+  let(:interpreter)   { Interpreter.new }
+  let(:tokenizer)     { Tokenizer.new }
+  let(:parser)        { Parser.new }
+
+  it 'executes a command within an environment/frame' do
+    tokens = tokenizer.analyze('hello: there -> world')
+    ast    = parser.analyze(tokens)
+    cmd    = interpreter.analyze(ast)
+
+    result = processor.handle(cmd)
+
+    expect(result).to be_a(CommandResult)
   end
 end

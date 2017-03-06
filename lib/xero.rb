@@ -1,9 +1,6 @@
 require 'xero/version'
 
 module Xero
-  class Environment
-  end
-
   class Token
     attr_reader :content
     def initialize(val)
@@ -37,53 +34,52 @@ module Xero
     end
   end
 
-  # class LeftParens ...
-
   class Tokenizer
     def analyze(string)
       scanner = StringScanner.new(string)
       tokens = []
-      until scanner.eos?
+      halted = false
+      until scanner.eos? || halted
+        any_matched = false
         token_kinds.each do |token_kind|
           matched_token = scanner.scan(token_kind.pattern)
           if matched_token
             tokens << token_kind.new(matched_token)
+            any_matched = true
             break
           end
         end
+        halted = true if !any_matched
       end
-      tokens #.reject { |token| token.is_a?(Whitespace) }
+      tokens
     end
 
     def token_kinds
-      [ Label, Arrow, Whitespace ]
+      [ Label, Arrow, Whitespace, Colon ]
     end
   end
 
   class ExpressionNode
     attr_reader :value, :left, :right
-    def initialize(value, left: nil, right: nil) #, children: [])
+    def initialize(value, left: nil, right: nil)
       @value = value
       @left = left
       @right = right
-      # @children = children
     end
   end
 
   class LabelNode < ExpressionNode; end
-  class OperatorNode < ExpressionNode; end
+  class OperationNode < ExpressionNode; end
 
   class Parser
     # build ast and return root!
     def analyze(tokens)
-      # toss whitespace out
       tokens.reject! { |token| token.is_a?(Whitespace) }
-      puts "--- ANALYZE tokens=#{tokens}"
       expression(tokens)
     end
 
+    protected
     def expression(tokens)
-      # eventually, lists of ops -> defs; key/barewords -> cmds; lists of defs + cmds -> prog
       if tokens.length == 1
         the_token = tokens.first
         return label(the_token) if label(the_token)
@@ -110,30 +106,97 @@ module Xero
     def operation(tokens)
       first, second, *rest = tokens
       if label(first) && operator(second) && expression(rest)
-        OperatorNode.new(operator(second), left: label(first), right: expression(rest))
+        OperationNode.new(operator(second), left: label(first), right: expression(rest))
       end
     end
   end
 
   class Command; end
-  class HaulCommand < Command; end
-  class CommandResult; end
-  class SuccessfulCommand < CommandResult; end
+  class CreateNamedObjectCommand < Command; end
+  class CreateDefinitionCommand < Command
+    attr_reader :term, :definition
+    def initialize(term:, definition:)
+      @term = term
+      @definition = definition
+    end
+  end
+
+  class ComposeElementsCommand < Command
+    attr_reader :left, :right
+    def initialize(left:, right:)
+      @left = left
+      @right = right
+    end
+  end
 
   class Interpreter
     def analyze(ast)
-      # turn ast into command
+      if ast.is_a?(OperationNode)
+        case ast.value
+        when :defn then
+          # left = analyze(ast.left)
+          raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
+          CreateDefinitionCommand.new(term: ast.left.value, definition: analyze(ast.right))
+        when :arrow then
+          # nav thru tree...?
+          ComposeElementsCommand.new(left: ast.left.value, right: ast.right.value)
+        end
+      else
+        raise "unknown root node type #{ast.class} (need OperatorNode): #{ast}"
+      end
+    end
+  end
+
+  #####
+
+  class CommandResult; end
+  class CommandSuccessful < CommandResult
+  end
+  class CommandFailed < CommandResult
+    def initialize(errors)
+      @errors = errors
+    end
+  end
+
+  class SimpleEnvironment
+  end
+
+  class SimpleController
+    def initialize(env)
+      @env = env
+    end
+
+    def create_named_object(name:)
+    end
+
+    def compose_elements(left:, right:)
+    end
+
+    def create_definition(term:, definition:)
+       CommandFailed.new("something bad")
     end
   end
 
   class Processor
-    def initialize(environment)
-      @env = environment
+    def initialize(environment:, controlled_by: SimpleController)
+      @controller = controlled_by.new(environment)
     end
 
-    def analyze(command)
-      # compute result of command in environment
-      # aggregate fired events for further processing...
+    def handle(command)
+      case command
+      when CreateDefinitionCommand then
+        @controller.create_definition(
+          term: command.term,
+          definition: command.definition
+        )
+      when ComposeElementsCommand then
+        @controller.compose_elements(
+          left: command.left,
+          right: command.right
+        )
+      else
+        CommandFailed.new(["Unknown command type", "please implement a command handler", command])
+      end
     end
   end
 
