@@ -5,10 +5,14 @@ if File.directory?(File.join(root,'.git'))
   Dir.chdir(root) do
     begin
       require 'bundler/setup'
+      require 'xero'
+
+      repl = Xero::Repl.new
+      repl.launch!
     rescue LoadError => e
       warn e.message
       warn "Run `gem install bundler` to install Bundler"
-      exit -1
+      exit(-1)
     end
   end
 end
