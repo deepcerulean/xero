@@ -5,13 +5,15 @@ module Xero
     def initialize()
       @environment = Environment.new
       @processor = Processor.new(environment: @environment)
+      @evaluator = Evaluator.new
     end
 
     def launch!
       puts welcome_message
       while input = Readline.readline('> ', true)
         command = @evaluator.determine(input)
-        p @processor.execute(command)
+        result = @processor.execute(command)
+        puts result.message
       end
     end
 

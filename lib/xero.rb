@@ -131,7 +131,13 @@ module Xero
   end
 
   class Command; end
-  class CreateNamedObjectCommand < Command; end
+  class CreateNamedObjectCommand < Command
+    attr_reader :label
+    def initialize(label:)
+      @label = label
+    end
+  end
+
   class CreateDefinitionCommand < Command
     attr_reader :term, :definition
     def initialize(term:, definition:)
@@ -163,8 +169,9 @@ module Xero
         else
           raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
         end
-      else
-        raise "unknown root node type #{ast.class} (need OperationNode): #{ast}"
+      elsif ast.is_a?(LabelNode)
+        CreateNamedObjectCommand.new(label: ast.value)
+        # raise "unknown root node type #{ast.class} (need OperationNode): #{ast}"
       end
     end
   end
@@ -180,29 +187,24 @@ module Xero
     end
 
     def determine(string)
-      puts "[xero eval #{string}]"
+      # puts "[xero eval #{string}]"
       tokens = @tokenizer.analyze(string)
-      puts "tokens: #{tokens}"
+      # puts "tokens: #{tokens}"
       ast = @parser.analyze(tokens)
-      puts "ast: #{ast}"
+      # puts "ast: #{ast}"
       command = @interpreter.analyze(ast)
-      puts "command: #{command}"
+      # puts "command: #{command}"
       command
-      # result = @processor.handle(command)
-      # puts "result: #{result}"
-      # result
     end
   end
 
   #####
 
-  class CommandResult; end
+  class CommandResult; attr_reader :message end
   class CommandSuccessful < CommandResult
     def initialize(message="ok")
       @message = message
     end
-
-    def to_s; @message end
     def successful?; true end
   end
 
@@ -210,7 +212,6 @@ module Xero
     def initialize(message="error")
       @message = message
     end
-    def to_s; @message end
     def successful?; false end
   end
 
@@ -222,6 +223,10 @@ module Xero
     def arrows
       @arrows ||= {}
     end
+
+    def objects
+      @objects ||= []
+    end
   end
 
   class Controller
@@ -230,16 +235,23 @@ module Xero
     end
 
     def create_named_object(name:)
-      CommandFailed.new('create named obj not impl')
+      if @env.objects.include?(name)
+        CommandFailed.new("an obj already exists called '#{name}'")
+      else
+        @env.objects << name
+        CommandSuccessful.new("okay: created named object '#{name}'")
+      end
     end
 
     def compose_elements(elements:)
       elements.each_cons(2) do |a,b|
+        create_named_object(name: a) # ..
+        create_named_object(name: b)
         @env.arrows[a] ||= []
-        puts "--- composing '#{a}' and '#{b}'..."
+        # puts "--- composing '#{a}' and '#{b}'..."
         @env.arrows[a] << b
       end
-      CommandSuccessful.new("okay: composed #{elements}")
+      CommandSuccessful.new("okay: composed #{elements.join(', ')}")
     end
 
     def create_definition(term:, definition:)
@@ -264,6 +276,8 @@ module Xero
         @controller.compose_elements(
           elements: command.elements
         )
+      when CreateNamedObjectCommand then
+        @controller.create_named_object(name: command.label)
       else
         CommandFailed.new(["Unknown command type", "please implement a command handler", command])
       end

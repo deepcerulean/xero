@@ -153,4 +153,16 @@ describe Processor do
     expect(hello).to be_a(ComposeElementsCommand)
     expect(hello.elements).to contain_exactly('there', 'world')
   end
+
+  it 'executes a create named object command' do
+    tokens = tokenizer.analyze('hello')
+    ast    = parser.analyze(tokens)
+    cmd    = interpreter.analyze(ast)
+    result = processor.execute(cmd)
+
+    expect(result).to be_a(CommandResult)
+    expect(result).to be_successful
+
+    expect(environment.objects).to contain_exactly('hello')
+  end
 end
