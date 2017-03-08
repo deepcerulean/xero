@@ -1,4 +1,5 @@
 require 'xero/version'
+require 'pry'
 
 module Xero
   class Token
@@ -6,15 +7,20 @@ module Xero
     def initialize(val)
       @content = val
     end
+
+    def to_s
+      "#{self.class.name}[#@content]"
+    end
+    alias :inspect :to_s
   end
 
-  class Whitespace < Token
+  class WhitespaceToken < Token
     def self.pattern
       /\s+/
     end
   end
 
-  class Label < Token
+  class LabelToken < Token
     def self.pattern
       /[a-zA-Z]+/
     end
@@ -22,13 +28,13 @@ module Xero
 
   class OpToken < Token; end
 
-  class Arrow < OpToken
+  class ArrowToken < OpToken
     def self.pattern
       /->/
     end
   end
 
-  class Colon < OpToken
+  class ColonToken < OpToken
     def self.pattern
       /:/
     end
@@ -55,7 +61,7 @@ module Xero
     end
 
     def token_kinds
-      [ Label, Arrow, Whitespace, Colon ]
+      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken ]
     end
   end
 
@@ -66,6 +72,19 @@ module Xero
       @left = left
       @right = right
     end
+
+    def to_s(depth: 1)
+      tabs = "\n" + ('  ' * depth)
+      if !(@left || @right)
+        tabs + "#{self.class.name}[#@value]"
+      else
+        tabs + "#{self.class.name}[#@value]\n" +
+          tabs + "left: #{@left.to_s(depth: depth+1)}\n" +
+          tabs + "right: #{@right.to_s(depth: depth+1)}\n"
+      end
+    end
+    alias :inspect :to_s
+
   end
 
   class LabelNode < ExpressionNode; end
@@ -74,7 +93,7 @@ module Xero
   class Parser
     # build ast and return root!
     def analyze(tokens)
-      tokens.reject! { |token| token.is_a?(Whitespace) }
+      tokens.reject! { |token| token.is_a?(WhitespaceToken) }
       expression(tokens)
     end
 
@@ -89,7 +108,7 @@ module Xero
     end
 
     def label(token)
-      if token.is_a?(Label)
+      if token.is_a?(LabelToken)
         LabelNode.new(token.content)
       end
     end
@@ -97,8 +116,8 @@ module Xero
     def operator(token)
       if token.is_a?(OpToken)
         case token
-        when Arrow then :arrow
-        when Colon then :defn
+        when ArrowToken then :arrow
+        when ColonToken then :defn
         end
       end
     end
@@ -122,15 +141,15 @@ module Xero
   end
 
   class ComposeElementsCommand < Command
-    attr_reader :left, :right
-    def initialize(left:, right:)
-      @left = left
-      @right = right
+    attr_reader :elements
+    def initialize(elements:)
+      @elements = elements
     end
   end
 
   class Interpreter
     def analyze(ast)
+      raise "AST must be an expression node!" unless ast.is_a?(ExpressionNode)
       if ast.is_a?(OperationNode)
         case ast.value
         when :defn then
@@ -138,12 +157,40 @@ module Xero
           raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
           CreateDefinitionCommand.new(term: ast.left.value, definition: analyze(ast.right))
         when :arrow then
-          # nav thru tree...?
-          ComposeElementsCommand.new(left: ast.left.value, right: ast.right.value)
+          left_elems = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).elements
+          right_elems = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).elements
+          ComposeElementsCommand.new(elements: left_elems + right_elems)
+        else
+          raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
         end
       else
-        raise "unknown root node type #{ast.class} (need OperatorNode): #{ast}"
+        raise "unknown root node type #{ast.class} (need OperationNode): #{ast}"
       end
+    end
+  end
+
+  # wrap tokenize-parse-interpret into one component
+  class Evaluator
+    def initialize #(env)
+      # @env = Environment.new
+      @tokenizer = Tokenizer.new
+      @parser = Parser.new
+      @interpreter = Interpreter.new
+      # @processor = Processor.new(environment: @env)
+    end
+
+    def determine(string)
+      puts "[xero eval #{string}]"
+      tokens = @tokenizer.analyze(string)
+      puts "tokens: #{tokens}"
+      ast = @parser.analyze(tokens)
+      puts "ast: #{ast}"
+      command = @interpreter.analyze(ast)
+      puts "command: #{command}"
+      command
+      # result = @processor.handle(command)
+      # puts "result: #{result}"
+      # result
     end
   end
 
@@ -151,38 +198,62 @@ module Xero
 
   class CommandResult; end
   class CommandSuccessful < CommandResult
+    def initialize(message="ok")
+      @message = message
+    end
+
+    def to_s; @message end
+    def successful?; true end
   end
+
   class CommandFailed < CommandResult
-    def initialize(errors)
-      @errors = errors
+    def initialize(message="error")
+      @message = message
+    end
+    def to_s; @message end
+    def successful?; false end
+  end
+
+  class Environment
+    def dictionary
+      @dict ||= {}
+    end
+
+    def arrows
+      @arrows ||= {}
     end
   end
 
-  class SimpleEnvironment
-  end
-
-  class SimpleController
+  class Controller
     def initialize(env)
       @env = env
     end
 
     def create_named_object(name:)
+      CommandFailed.new('create named obj not impl')
     end
 
-    def compose_elements(left:, right:)
+    def compose_elements(elements:)
+      elements.each_cons(2) do |a,b|
+        @env.arrows[a] ||= []
+        puts "--- composing '#{a}' and '#{b}'..."
+        @env.arrows[a] << b
+      end
+      CommandSuccessful.new("okay: composed #{elements}")
     end
 
     def create_definition(term:, definition:)
-       CommandFailed.new("something bad")
+      @env.dictionary[term] = definition
+      CommandSuccessful.new("okay: added definition '#{term}'!")
     end
   end
 
   class Processor
-    def initialize(environment:, controlled_by: SimpleController)
-      @controller = controlled_by.new(environment)
+    def initialize(environment:)
+      @controller = Controller.new(environment)
     end
 
-    def handle(command)
+    def execute(command)
       case command
       when CreateDefinitionCommand then
         @controller.create_definition(
@@ -191,8 +262,7 @@ module Xero
         )
       when ComposeElementsCommand then
         @controller.compose_elements(
-          left: command.left,
-          right: command.right
+          elements: command.elements
         )
       else
         CommandFailed.new(["Unknown command type", "please implement a command handler", command])
@@ -200,41 +270,4 @@ module Xero
     end
   end
 
-  class Repl
-    attr_reader :env
-    def initialize
-      @env = Environment.new
-      @tokenizer = Tokenizer.new
-      @parser = Parser.new
-      @interpreter = Interpreter.new
-      @processor = Processor.new(@env)
-    end
-
-    def launch!
-      puts welcome_message
-      print ">> "
-      xero_eval(gets.chomp)
-    end
-
-    protected
-
-    def welcome_message
-      "XERO #{Xero::VERSION}\n\n\n"
-    end
-
-    private
-
-    def xero_eval(command)
-      puts "[xero eval #{command}]"
-      tokens = @tokenizer.analyze(gets)
-      puts "tokens: #{tokens}"
-      ast = @parser.analyze(tokens)
-      puts "ast: #{ast}"
-      command = @interpreter.analyze(ast)
-      puts "commands: #{commands}"
-      result, events = @processor.analyze(command)
-      puts "result: #{result}"
-      puts "events: #{events}"
-    end
-  end
 end

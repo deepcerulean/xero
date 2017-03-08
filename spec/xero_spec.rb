@@ -15,9 +15,9 @@ describe Tokenizer do
   it 'should break strings into tokens' do
     tokens = tokenizer.analyze('hello -> world')
     expect(tokens.length).to eq(5)
-    expect(tokens.first).to be_a(Label)
+    expect(tokens.first).to be_a(LabelToken)
     expect(tokens.first.content).to eq('hello')
-    expect(tokens.map(&:class)).to eq([Label, Whitespace, Arrow, Whitespace, Label])
+    expect(tokens.map(&:class)).to eq([LabelToken, WhitespaceToken, ArrowToken, WhitespaceToken, LabelToken])
     expect(tokens.map(&:content)).to eq(['hello', ' ', '->', ' ', 'world'])
   end
 end
@@ -102,26 +102,55 @@ describe Interpreter do
 
     expect(cmd.term).to eq('hello')
     expect(cmd.definition).to be_a(ComposeElementsCommand)
-    expect(cmd.definition.left).to eq('there')
-    expect(cmd.definition.right).to eq('world')
+    expect(cmd.definition.elements).to contain_exactly('there', 'world')
+  end
+
+  it 'can navigate chained ops' do
+    tokens = tokenizer.analyze('hello -> there -> world')
+    ast = parser.analyze(tokens)
+    cmd = interpreter.analyze(ast)
+
+    expect(cmd).to be_a(ComposeElementsCommand)
+    expect(cmd.elements).to contain_exactly('hello', 'there', 'world')
   end
 end
 
+xdescribe Evaluator
+
 describe Processor do
   subject(:processor) { Processor.new(environment: environment) }
-  let(:environment) { SimpleEnvironment.new }
+  let(:environment) { Environment.new }
 
   let(:interpreter)   { Interpreter.new }
   let(:tokenizer)     { Tokenizer.new }
   let(:parser)        { Parser.new }
 
-  it 'executes a command within an environment/frame' do
+  it 'executes a compose command' do
+    tokens = tokenizer.analyze('hello -> world')
+    ast    = parser.analyze(tokens)
+    cmd    = interpreter.analyze(ast)
+
+    result = processor.execute(cmd)
+
+    expect(result).to be_a(CommandResult)
+    expect(result).to be_successful
+
+    expect(environment.arrows).to include('hello' => %w[world])
+  end
+
+  it 'executes a definition command' do
     tokens = tokenizer.analyze('hello: there -> world')
     ast    = parser.analyze(tokens)
     cmd    = interpreter.analyze(ast)
 
-    result = processor.handle(cmd)
+    result = processor.execute(cmd)
 
     expect(result).to be_a(CommandResult)
+    expect(result).to be_successful
+    expect(environment.dictionary).to have_key('hello')
+
+    hello = environment.dictionary['hello']
+    expect(hello).to be_a(ComposeElementsCommand)
+    expect(hello.elements).to contain_exactly('there', 'world')
   end
 end

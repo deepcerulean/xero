@@ -6,6 +6,7 @@ if File.directory?(File.join(root,'.git'))
     begin
       require 'bundler/setup'
       require 'xero'
+      require 'xero/repl'
 
       repl = Xero::Repl.new
       repl.launch!
