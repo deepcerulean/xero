@@ -20,6 +20,16 @@ describe Tokenizer do
     expect(tokens.map(&:class)).to eq([LabelToken, WhitespaceToken, ArrowToken, WhitespaceToken, LabelToken])
     expect(tokens.map(&:content)).to eq(['hello', ' ', '->', ' ', 'world'])
   end
+
+  it 'should break strings into tokens' do
+    tokens = tokenizer.analyze('there . world')
+    expect(tokens.length).to eq(5)
+    expect(tokens.first).to be_a(LabelToken)
+    expect(tokens.first.content).to eq('there')
+    expect(tokens.map(&:class)).to eq([LabelToken, WhitespaceToken, DotToken, WhitespaceToken, LabelToken])
+    expect(tokens.map(&:content)).to eq(['there', ' ', '.', ' ', 'world'])
+  end
+
 end
 
 describe Parser do
@@ -101,8 +111,8 @@ describe Interpreter do
     expect(cmd).to be_a(CreateDefinitionCommand)
 
     expect(cmd.term).to eq('hello')
-    expect(cmd.definition).to be_a(ComposeElementsCommand)
-    expect(cmd.definition.elements).to contain_exactly('there', 'world')
+    expect(cmd.definition).to be_a(ComposeObjectsCommand)
+    expect(cmd.definition.objects).to contain_exactly('there', 'world')
   end
 
   it 'can navigate chained ops' do
@@ -110,8 +120,17 @@ describe Interpreter do
     ast = parser.analyze(tokens)
     cmd = interpreter.analyze(ast)
 
-    expect(cmd).to be_a(ComposeElementsCommand)
-    expect(cmd.elements).to contain_exactly('hello', 'there', 'world')
+    expect(cmd).to be_a(ComposeObjectsCommand)
+    expect(cmd.objects).to contain_exactly('hello', 'there', 'world')
+  end
+
+  it 'can handle dots' do
+    tokens = tokenizer.analyze('f . g')
+    ast = parser.analyze(tokens)
+    cmd = interpreter.analyze(ast)
+
+    expect(cmd).to be_a(ComposeArrowsCommand)
+    expect(cmd.arrows).to contain_exactly('f', 'g')
   end
 end
 
@@ -121,14 +140,12 @@ describe Processor do
   subject(:processor) { Processor.new(environment: environment) }
   let(:environment) { Environment.new }
 
-  let(:interpreter)   { Interpreter.new }
-  let(:tokenizer)     { Tokenizer.new }
-  let(:parser)        { Parser.new }
+  let(:evaluator) do
+    Evaluator.new
+  end
 
-  it 'executes a compose command' do
-    tokens = tokenizer.analyze('hello -> world')
-    ast    = parser.analyze(tokens)
-    cmd    = interpreter.analyze(ast)
+  it 'executes a compose objects command' do
+    cmd    = evaluator.determine('hello -> world')
 
     result = processor.execute(cmd)
 
@@ -139,9 +156,10 @@ describe Processor do
   end
 
   it 'executes a definition command' do
-    tokens = tokenizer.analyze('hello: there -> world')
-    ast    = parser.analyze(tokens)
-    cmd    = interpreter.analyze(ast)
+    # tokens = tokenizer.analyze('hello: there -> world')
+    # ast    = parser.analyze(tokens)
+    # interpreter.analyze(ast)
+    cmd    = evaluator.determine('hello: there -> world')
 
     result = processor.execute(cmd)
 
@@ -150,19 +168,25 @@ describe Processor do
     expect(environment.dictionary).to have_key('hello')
 
     hello = environment.dictionary['hello']
-    expect(hello).to be_a(ComposeElementsCommand)
-    expect(hello.elements).to contain_exactly('there', 'world')
+    expect(hello).to be_a(ComposeObjectsCommand)
+    expect(hello.objects).to contain_exactly('there', 'world')
   end
 
-  it 'executes a create named object command' do
-    tokens = tokenizer.analyze('hello')
-    ast    = parser.analyze(tokens)
-    cmd    = interpreter.analyze(ast)
-    result = processor.execute(cmd)
+  it 'executes a compose arrows command' do
+    processor.evaluate('f: a -> b')
+    processor.evaluate('g: b -> c')
 
+    result = processor.evaluate('f . g')
     expect(result).to be_a(CommandResult)
     expect(result).to be_successful
+  end
 
-    expect(environment.objects).to contain_exactly('hello')
+  it 'executes a query named entity command' do
+    processor.evaluate('hello -> there')
+    expect(environment.arrows.keys).to contain_exactly('hello')
+
+    result = processor.evaluate('hello')
+    expect(result).to be_a(CommandResult)
+    expect(result).to be_successful
   end
 end

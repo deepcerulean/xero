@@ -1,6 +1,8 @@
 require 'readline'
 
 module Xero
+  class ReplCommand; end
+
   class Repl
     def initialize()
       @environment = Environment.new
@@ -11,13 +13,22 @@ module Xero
     def launch!
       puts welcome_message
       while input = Readline.readline('> ', true)
-        command = @evaluator.determine(input)
-        result = @processor.execute(command)
-        puts result.message
+        begin
+          command = @evaluator.determine(input)
+          result = @processor.execute(command)
+          puts result.message
+        rescue => ex
+          puts "--- Encountered an exception: #{ex.message}"
+          puts "[backtrace: #{ex.backtrace}]"
+        end
+        # puts "objects: #{@environment.objects}"
+        # puts "arrows: #{@environment.arrows}
+        # puts "dictionary: #{@environment.dictionary}"
       end
     end
 
     protected
+
     def welcome_message
       "XERO #{Xero::VERSION}\n" + '-'*30
     end

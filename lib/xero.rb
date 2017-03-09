@@ -34,6 +34,12 @@ module Xero
     end
   end
 
+  class DotToken < OpToken
+    def self.pattern
+      /\./
+    end
+  end
+
   class ColonToken < OpToken
     def self.pattern
       /:/
@@ -61,7 +67,7 @@ module Xero
     end
 
     def token_kinds
-      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken ]
+      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken ]
     end
   end
 
@@ -84,7 +90,6 @@ module Xero
       end
     end
     alias :inspect :to_s
-
   end
 
   class LabelNode < ExpressionNode; end
@@ -118,6 +123,7 @@ module Xero
         case token
         when ArrowToken then :arrow
         when ColonToken then :defn
+        when DotToken then :dot
         end
       end
     end
@@ -130,11 +136,12 @@ module Xero
     end
   end
 
+  ## command interpreter..
   class Command; end
-  class CreateNamedObjectCommand < Command
-    attr_reader :label
-    def initialize(label:)
-      @label = label
+  class QueryEntityCommand < Command
+    attr_reader :name
+    def initialize(name:)
+      @name = name
     end
   end
 
@@ -146,16 +153,24 @@ module Xero
     end
   end
 
-  class ComposeElementsCommand < Command
-    attr_reader :elements
-    def initialize(elements:)
-      @elements = elements
+  class ComposeObjectsCommand < Command
+    attr_reader :objects
+    def initialize(objects:)
+      @objects = objects
+    end
+  end
+
+  class ComposeArrowsCommand < Command
+    attr_reader :arrows
+    def initialize(arrows:)
+      @arrows = arrows
     end
   end
 
   class Interpreter
     def analyze(ast)
-      raise "AST must be an expression node!" unless ast.is_a?(ExpressionNode)
+      raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
+
       if ast.is_a?(OperationNode)
         case ast.value
         when :defn then
@@ -163,15 +178,20 @@ module Xero
           raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
           CreateDefinitionCommand.new(term: ast.left.value, definition: analyze(ast.right))
         when :arrow then
-          left_elems = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).elements
-          right_elems = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).elements
-          ComposeElementsCommand.new(elements: left_elems + right_elems)
+          left_elems = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).objects
+          right_elems = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).objects
+          ComposeObjectsCommand.new(objects: left_elems + right_elems)
+        when :dot then
+          left_arrows = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).arrows
+          right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
+          ComposeArrowsCommand.new(arrows: left_arrows + right_arrows)
         else
           raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
         end
       elsif ast.is_a?(LabelNode)
-        CreateNamedObjectCommand.new(label: ast.value)
-        # raise "unknown root node type #{ast.class} (need OperationNode): #{ast}"
+        QueryEntityCommand.new(name: ast.value)
+      else
+        raise "unknown root node type #{ast.class} (need OperationNode or LabelNode): #{ast}"
       end
     end
   end
@@ -234,29 +254,47 @@ module Xero
       @env = env
     end
 
-    def create_named_object(name:)
+    def query_entity(name:)
       if @env.objects.include?(name)
-        CommandFailed.new("an obj already exists called '#{name}'")
+        CommandSuccessful.new("okay: found object '#{name}'")
+      elsif @env.arrows.keys.include?(name)
+        CommandSuccessful.new("okay: found arrow '#{name}': #{@env.dictionary[name]}")
+      elsif @env.arrows.values.any? { |tgts| tgts.include?(name) }
+        CommandSuccessful.new("okay: found arrow '#{name}': #{@env.dictionary[name]}")
       else
-        @env.objects << name
-        CommandSuccessful.new("okay: created named object '#{name}'")
+        CommandFailed.new("no entity exists called '#{name}'")
       end
     end
 
-    def compose_elements(elements:)
-      elements.each_cons(2) do |a,b|
-        create_named_object(name: a) # ..
-        create_named_object(name: b)
+    def compose_arrows(arrows:)
+      # binding.pry
+      arrows.each_cons(2) do |f,g|
+        @env.arrows[f] ||= []
+        @env.arrows[f] << g
+      end
+      ok("composed arrows #{arrows.join(', ')}")
+    end
+
+    def compose_objects(objects:)
+      objects.each_cons(2) do |a,b|
         @env.arrows[a] ||= []
-        # puts "--- composing '#{a}' and '#{b}'..."
         @env.arrows[a] << b
       end
-      CommandSuccessful.new("okay: composed #{elements.join(', ')}")
+      ok("composed objs #{objects.join(', ')}")
     end
 
     def create_definition(term:, definition:)
       @env.dictionary[term] = definition
-      CommandSuccessful.new("okay: added definition '#{term}'!")
+      ok("added definition '#{term}'!")
+    end
+
+    protected
+    def ok(msg)
+      CommandSuccessful.new(msg)
+    end
+
+    def err(msg)
+      CommandFailed.new(msg)
     end
   end
 
@@ -272,16 +310,31 @@ module Xero
           term: command.term,
           definition: command.definition
         )
-      when ComposeElementsCommand then
-        @controller.compose_elements(
-          elements: command.elements
+      when ComposeObjectsCommand then
+        @controller.compose_objects(
+          objects: command.objects
         )
-      when CreateNamedObjectCommand then
-        @controller.create_named_object(name: command.label)
+      when ComposeArrowsCommand then
+        @controller.compose_arrows(
+          arrows: command.arrows
+        )
+      when QueryEntityCommand then
+        @controller.query_entity(
+          name: command.name
+        )
       else
-        CommandFailed.new(["Unknown command type", "please implement a command handler", command])
+        CommandFailed.new(["Unknown command type", "please implement a command handler for #{command.class}", command])
       end
     end
-  end
 
+    def evaluate(string)
+      cmd = evaluator.determine(string)
+      execute(cmd)
+    end
+
+    private
+    def evaluator
+      @evaluator ||= Evaluator.new
+    end
+  end
 end
