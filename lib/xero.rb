@@ -1,76 +1,8 @@
 require 'xero/version'
+require 'xero/tokenizer'
 require 'pry'
 
 module Xero
-  class Token
-    attr_reader :content
-    def initialize(val)
-      @content = val
-    end
-
-    def to_s
-      "#{self.class.name}[#@content]"
-    end
-    alias :inspect :to_s
-  end
-
-  class WhitespaceToken < Token
-    def self.pattern
-      /\s+/
-    end
-  end
-
-  class LabelToken < Token
-    def self.pattern
-      /[a-zA-Z]+/
-    end
-  end
-
-  class OpToken < Token; end
-
-  class ArrowToken < OpToken
-    def self.pattern
-      /->/
-    end
-  end
-
-  class DotToken < OpToken
-    def self.pattern
-      /\./
-    end
-  end
-
-  class ColonToken < OpToken
-    def self.pattern
-      /:/
-    end
-  end
-
-  class Tokenizer
-    def analyze(string)
-      scanner = StringScanner.new(string)
-      tokens = []
-      halted = false
-      until scanner.eos? || halted
-        any_matched = false
-        token_kinds.each do |token_kind|
-          matched_token = scanner.scan(token_kind.pattern)
-          if matched_token
-            tokens << token_kind.new(matched_token)
-            any_matched = true
-            break
-          end
-        end
-        halted = true if !any_matched
-      end
-      tokens
-    end
-
-    def token_kinds
-      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken ]
-    end
-  end
-
   class ExpressionNode
     attr_reader :value, :left, :right
     def initialize(value, left: nil, right: nil)
@@ -96,7 +28,7 @@ module Xero
   class OperationNode < ExpressionNode; end
 
   class Parser
-    # build ast and return root!
+    # take tokens, build ast -- and return root of the abstract syntax tree!
     def analyze(tokens)
       tokens.reject! { |token| token.is_a?(WhitespaceToken) }
       expression(tokens)
@@ -145,46 +77,67 @@ module Xero
     end
   end
 
-  class CreateDefinitionCommand < Command
-    attr_reader :term, :definition
-    def initialize(term:, definition:)
-      @term = term
-      @definition = definition
-    end
-  end
-
-  class ComposeObjectsCommand < Command
-    attr_reader :objects
-    def initialize(objects:)
-      @objects = objects
+  class DrawArrowCommand < Command
+    attr_reader :source, :target
+    def initialize(source:, target:)
+      @source = source
+      @target = target
     end
   end
 
   class ComposeArrowsCommand < Command
-    attr_reader :arrows
-    def initialize(arrows:)
-      @arrows = arrows
+    attr_reader :source, :target
+    def initialize(source:, target:)
+      @source = source
+      @target = target
+    end
+  end
+
+  class DrawNamedArrowCommand < Command
+    attr_reader :name, :source, :target
+    def initialize(name:, source:, target:)
+      @name = name
+      @source = source
+      @target = target
+    end
+  end
+
+  # this is effectively the same as draw named arrow
+  # but needs the env to de-ref the arrow defns
+  class DrawNamedCompositionCommand < Command
+    attr_reader :name, :first_arrow, :second_arrow
+    def initialize(name:, first_arrow:, second_arrow:)
+      @name = name
+      @first_arrow = first_arrow
+      @second_arrow = second_arrow
     end
   end
 
   class Interpreter
     def analyze(ast)
       raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
-
       if ast.is_a?(OperationNode)
         case ast.value
         when :defn then
-          # left = analyze(ast.left)
           raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
-          CreateDefinitionCommand.new(term: ast.left.value, definition: analyze(ast.right))
+          name = ast.left.value
+          arrow_cmd = analyze(ast.right)
+          case arrow_cmd
+          when ComposeArrowsCommand then
+            DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
+          when DrawArrowCommand then
+            DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
+          else
+            raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
+          end
         when :arrow then
-          left_elems = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).objects
-          right_elems = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).objects
-          ComposeObjectsCommand.new(objects: left_elems + right_elems)
+          raise "can only draw arrows between named objects" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+          DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
         when :dot then
-          left_arrows = ast.left.is_a?(LabelNode) ? [ast.left.value] : analyze(ast.left).arrows
-          right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
-          ComposeArrowsCommand.new(arrows: left_arrows + right_arrows)
+          raise "can only compose named arrows" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+          #? [ast.left.value] : analyze(ast.left).arrows
+          # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
+          ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
         else
           raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
         end
@@ -235,13 +188,42 @@ module Xero
     def successful?; false end
   end
 
-  class Environment
-    def dictionary
-      @dict ||= {}
+  class Entity
+    attr_reader :name
+    def initialize(name:)
+      @name = name
+    end
+  end
+
+  class Arrow
+    attr_reader :to, :from, :name
+    def initialize(from:, to:, name: nil)
+      @from = from
+      @to = to
+      @name = name
     end
 
+    def compose(other)
+      if other.from == self.to
+        Arrow.new(from: self.from, to: other.to)
+      else
+        raise "Can't compose #{other} -> #{self} (non-matching ends)"
+      end
+    end
+
+    def to_s
+      if @name
+        "#@name: #@from -> #@to"
+      else
+        "#@from -> #@to"
+      end
+    end
+    alias :inspect :to_s
+  end
+
+  class Environment
     def arrows
-      @arrows ||= {}
+      @arrows ||= []
     end
 
     def objects
@@ -255,40 +237,64 @@ module Xero
     end
 
     def query_entity(name:)
-      if @env.objects.include?(name)
-        CommandSuccessful.new("okay: found object '#{name}'")
-      elsif @env.arrows.keys.include?(name)
-        CommandSuccessful.new("okay: found arrow '#{name}': #{@env.dictionary[name]}")
-      elsif @env.arrows.values.any? { |tgts| tgts.include?(name) }
-        CommandSuccessful.new("okay: found arrow '#{name}': #{@env.dictionary[name]}")
+      if @env.objects.any? { |o| o.name == name } #include?(name)
+        ok("found object '#{name}'")
+      elsif @env.arrows.any? { |a| a.name == name } #.include?(name)
+        ok("found arrow '#{name}': #{@env.dictionary[name]}")
+      # elsif @env.arrows.values.any? { |tgts| tgts.include?(name) }
+      #   ok("found arrow '#{name}': #{@env.dictionary[name]}")
       else
-        CommandFailed.new("no entity exists called '#{name}'")
+        err("no entity exists called '#{name}'")
       end
     end
 
-    def compose_arrows(arrows:)
-      # binding.pry
-      arrows.each_cons(2) do |f,g|
-        @env.arrows[f] ||= []
-        @env.arrows[f] << g
-      end
-      ok("composed arrows #{arrows.join(', ')}")
+    def compose_arrows(f,g)
+      puts "--- COMPOSE ARROWS (f=#{f}, g=#{g})"
+      first_arrow = @env.arrows.detect { |arrow| arrow.name == g }
+      next_arrow  = @env.arrows.detect { |arrow| arrow.name == f }
+
+      # compose them
+      composition = first_arrow.compose(next_arrow)
+      ok("composed arrows #{first_arrow} and #{next_arrow} yielding #{composition}")
     end
 
-    def compose_objects(objects:)
-      objects.each_cons(2) do |a,b|
-        @env.arrows[a] ||= []
-        @env.arrows[a] << b
+    def draw_arrow(from:,to:)
+      if @env.arrows.any? { |arrow| arrow.from == from && arrow.to == to }
+        err("arrow already exists between #{from} and #{to}")
+      else
+        @env.arrows << Arrow.new(from: from, to: to)
+        ok("created anonymous arrow from #{from} to #{to}")
       end
-      ok("composed objs #{objects.join(', ')}")
     end
 
-    def create_definition(term:, definition:)
-      @env.dictionary[term] = definition
-      ok("added definition '#{term}'!")
+    def draw_named_arrow(from:, to:, name:)
+      create_or_name_arrow(from: from, to: to, name: name)
+    end
+
+    def draw_named_composition(first_arrow:, second_arrow:, name:)
+      the_first  = @env.arrows.detect { |arrow| arrow.name == first_arrow }
+      the_second = @env.arrows.detect { |arrow| arrow.name == second_arrow }
+      raise "Ends of arrows don't line up (#{the_first} -/-> #{the_second})" unless the_first.to == the_second.from
+      from, to = the_first.from, the_second.to
+      create_or_name_arrow(from: from, to: to, name: name)
     end
 
     protected
+    def create_or_name_arrow(name:,to:,from:)
+      puts "--- CREATE (OR ASSIGN NAME TO) ARROW #{name} FROM #{from} TO #{to}"
+      if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
+        if existing_arrow.name.nil?
+          existing_arrow.name = name
+          ok("unnamed arrow from #{from} to #{to} was given name #{name}")
+        else
+          err("named arrow #{name} already exists between #{from} and #{to}")
+        end
+      else
+        @env.arrows << Arrow.new(from: from, to: to, name: name)
+        ok("created arrow named #{name} from #{from} to #{to}")
+      end
+    end
+
     def ok(msg)
       CommandSuccessful.new(msg)
     end
@@ -305,18 +311,29 @@ module Xero
 
     def execute(command)
       case command
-      when CreateDefinitionCommand then
-        @controller.create_definition(
-          term: command.term,
-          definition: command.definition
+      when DrawNamedArrowCommand then
+        @controller.draw_named_arrow(
+          from: command.source,
+          to: command.target,
+          name: command.name
         )
-      when ComposeObjectsCommand then
-        @controller.compose_objects(
-          objects: command.objects
+      when DrawNamedCompositionCommand then
+        @controller.draw_named_composition(
+          name: command.name,
+          first_arrow: command.first_arrow,
+          second_arrow: command.second_arrow
+        )
+      when DrawArrowCommand then
+        @controller.draw_arrow(
+          from: command.source,
+          to: command.target
+          # objects: command.objects
         )
       when ComposeArrowsCommand then
         @controller.compose_arrows(
-          arrows: command.arrows
+          command.target,
+          command.source
+          # arrows: command.arrows
         )
       when QueryEntityCommand then
         @controller.query_entity(
