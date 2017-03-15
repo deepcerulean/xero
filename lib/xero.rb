@@ -157,7 +157,7 @@ module Xero
             end
           end
         when :dot then
-          raise "can only compose named arrows" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+          raise "can only compose two named arrows at once :(" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
           #? [ast.left.value] : analyze(ast.left).arrows
           # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
           ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
@@ -262,7 +262,8 @@ module Xero
 
     def query_entity(name:)
       if (matching_obj=@env.objects.detect { |obj| obj == name })
-        ok("object '#{matching_obj}'")
+        referencing_arrows = @env.arrows.select { |arrow| arrow.from == matching_obj || arrow.to == matching_obj }
+        ok("object #{matching_obj}, referenced by #{referencing_arrows.map(&:to_s).join('; ')}")
       elsif (matching_arrow=@env.arrows.detect { |a| a.name == name })
         ok("arrow #{matching_arrow}")
       else
@@ -292,8 +293,8 @@ module Xero
     def draw_named_composition(first_arrow:, second_arrow:, name:)
       the_first  = @env.arrows.detect { |arrow| arrow.name == first_arrow }
       the_second = @env.arrows.detect { |arrow| arrow.name == second_arrow }
-      from, to = the_second.from, the_first.to
-      create_or_name_arrow(from: from, to: to, name: name)
+      composition = the_first.compose(the_second)
+      create_or_name_arrow(from: composition.from, to: composition.to, name: name)
     end
 
     def draw_linked_arrows(between:)
@@ -306,6 +307,7 @@ module Xero
 
     protected
     def create_anonymous_arrow(to:,from:)
+      raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
       if @env.arrows.any? { |arrow| arrow.from == from && arrow.to == to }
         err("arrow already exists between #{from} and #{to}")
       else
@@ -315,7 +317,11 @@ module Xero
     end
 
     def create_or_name_arrow(name:,to:,from:)
+      raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
+      raise "Objects can't also be arrows" if @env.objects.any? { |obj| name == obj }
       puts "--- CREATE (OR ASSIGN NAME TO) ARROW #{name} FROM #{from} TO #{to}"
+
+
       if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
         if existing_arrow.name.nil?
           existing_arrow.name = name

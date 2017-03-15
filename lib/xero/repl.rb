@@ -1,4 +1,5 @@
 require 'readline'
+require 'pastel'
 
 module Xero
   class ReplCommand; end
@@ -12,15 +13,24 @@ module Xero
 
     def launch!
       puts welcome_message
-      while input = Readline.readline('> ', true)
+      puts
+      puts
+      while input = Readline.readline(pastel.blue('> '), true)
         begin
           command = @evaluator.determine(input)
           result = @processor.execute(command)
-          puts result.message
+          message = result.message.capitalize
+          if result.successful?
+            puts pastel.green(message)
+          else
+            puts pastel.red(message)
+          end
+          puts
         rescue => ex
-          puts "Error: #{ex.message}"
+          puts pastel.red("Error: #{ex.message}")
           puts "[backtrace: #{ex.backtrace}]"
         end
+        puts
         # puts "objects: #{@environment.objects}"
         # puts "arrows: #{@environment.arrows}
         # puts "dictionary: #{@environment.dictionary}"
@@ -30,7 +40,11 @@ module Xero
     protected
 
     def welcome_message
-      "XERO #{Xero::VERSION}\n" + '-'*30
+      pastel.white("XERO #{Xero::VERSION}\n" + '-'*30)
+    end
+
+    def pastel
+      @pastel ||= ::Pastel.new
     end
   end
 end

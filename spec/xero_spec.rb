@@ -216,4 +216,9 @@ describe Processor do
     expect(result).to be_a(CommandResult)
     expect(result).to be_successful
   end
+
+  it 'will not make arrows out of objects' do
+    processor.evaluate('f: a -> b')
+    expect { processor.evaluate('a: x -> y') }.to raise_error(RuntimeError, "Objects can't also be arrows")
+  end
 end
