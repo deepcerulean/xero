@@ -113,6 +113,13 @@ module Xero
     end
   end
 
+  class DrawLinkedArrowsCommand < Command
+    attr_reader :objects
+    def initialize(objects:)
+      @objects = objects
+    end
+  end
+
   class Interpreter
     def analyze(ast)
       raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
@@ -127,12 +134,28 @@ module Xero
             DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
           when DrawArrowCommand then
             DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
-          else
+          else # TODO linked arrow defs..
             raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
           end
         when :arrow then
-          raise "can only draw arrows between named objects" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
-          DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
+          if ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+            DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
+          else
+            if ast.left.is_a?(LabelNode)
+              # try to process the right into a series of draw arrow commands...
+              right_cmd = analyze(ast.right)
+              case right_cmd
+              when DrawArrowCommand # meld with this one arrow, linking 3 objs
+                DrawLinkedArrowsCommand.new(objects: [ast.left.value, right_cmd.source, right_cmd.target])
+              when DrawLinkedArrowsCommand # meld with objs arr
+                DrawLinkedArrowsCommand.new(objects: [ast.left.value] + right_cmd.objects)
+              else
+                raise "Parsed unknown command #{right_cmd} from #{ast.right}"
+              end
+            else
+              raise "for now can only draw arrows starting from a named object..."
+            end
+          end
         when :dot then
           raise "can only compose named arrows" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
           #? [ast.left.value] : analyze(ast.left).arrows
@@ -196,7 +219,8 @@ module Xero
   end
 
   class Arrow
-    attr_reader :to, :from, :name
+    attr_accessor :name
+    attr_reader :to, :from
     def initialize(from:, to:, name: nil)
       @from = from
       @to = to
@@ -204,8 +228,8 @@ module Xero
     end
 
     def compose(other)
-      if other.from == self.to
-        Arrow.new(from: self.from, to: other.to)
+      if other.to == self.from
+        Arrow.new(from: other.from, to: self.to)
       else
         raise "Can't compose #{other} -> #{self} (non-matching ends)"
       end
@@ -227,7 +251,7 @@ module Xero
     end
 
     def objects
-      @objects ||= []
+      arrows.flat_map { |arrow| [arrow.from, arrow.to] }.uniq
     end
   end
 
@@ -237,34 +261,28 @@ module Xero
     end
 
     def query_entity(name:)
-      if @env.objects.any? { |o| o.name == name } #include?(name)
-        ok("found object '#{name}'")
-      elsif @env.arrows.any? { |a| a.name == name } #.include?(name)
-        ok("found arrow '#{name}': #{@env.dictionary[name]}")
-      # elsif @env.arrows.values.any? { |tgts| tgts.include?(name) }
-      #   ok("found arrow '#{name}': #{@env.dictionary[name]}")
+      if (matching_obj=@env.objects.detect { |obj| obj == name })
+        ok("object '#{matching_obj}'")
+      elsif (matching_arrow=@env.arrows.detect { |a| a.name == name })
+        ok("arrow #{matching_arrow}")
       else
         err("no entity exists called '#{name}'")
       end
     end
 
     def compose_arrows(f,g)
-      puts "--- COMPOSE ARROWS (f=#{f}, g=#{g})"
+      # puts "--- COMPOSE ARROWS (=#{f}, g=#{g})"
       first_arrow = @env.arrows.detect { |arrow| arrow.name == g }
       next_arrow  = @env.arrows.detect { |arrow| arrow.name == f }
 
       # compose them
       composition = first_arrow.compose(next_arrow)
+      create_anonymous_arrow(from: composition.from, to: composition.to)
       ok("composed arrows #{first_arrow} and #{next_arrow} yielding #{composition}")
     end
 
     def draw_arrow(from:,to:)
-      if @env.arrows.any? { |arrow| arrow.from == from && arrow.to == to }
-        err("arrow already exists between #{from} and #{to}")
-      else
-        @env.arrows << Arrow.new(from: from, to: to)
-        ok("created anonymous arrow from #{from} to #{to}")
-      end
+      create_anonymous_arrow(from: from, to: to)
     end
 
     def draw_named_arrow(from:, to:, name:)
@@ -274,12 +292,28 @@ module Xero
     def draw_named_composition(first_arrow:, second_arrow:, name:)
       the_first  = @env.arrows.detect { |arrow| arrow.name == first_arrow }
       the_second = @env.arrows.detect { |arrow| arrow.name == second_arrow }
-      raise "Ends of arrows don't line up (#{the_first} -/-> #{the_second})" unless the_first.to == the_second.from
-      from, to = the_first.from, the_second.to
+      from, to = the_second.from, the_first.to
       create_or_name_arrow(from: from, to: to, name: name)
     end
 
+    def draw_linked_arrows(between:)
+      results = []
+      between.each_cons(2) do |from,to|
+        results << draw_arrow(from: from, to: to)
+      end
+      ok(results.map(&:message).join('; '))
+    end
+
     protected
+    def create_anonymous_arrow(to:,from:)
+      if @env.arrows.any? { |arrow| arrow.from == from && arrow.to == to }
+        err("arrow already exists between #{from} and #{to}")
+      else
+        @env.arrows << Arrow.new(from: from, to: to)
+        ok("created anonymous arrow from #{from} to #{to}")
+      end
+    end
+
     def create_or_name_arrow(name:,to:,from:)
       puts "--- CREATE (OR ASSIGN NAME TO) ARROW #{name} FROM #{from} TO #{to}"
       if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
@@ -338,6 +372,10 @@ module Xero
       when QueryEntityCommand then
         @controller.query_entity(
           name: command.name
+        )
+      when DrawLinkedArrowsCommand then
+        @controller.draw_linked_arrows(
+          between: command.objects
         )
       else
         CommandFailed.new(["Unknown command type", "please implement a command handler for #{command.class}", command])

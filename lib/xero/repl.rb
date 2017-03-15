@@ -18,7 +18,7 @@ module Xero
           result = @processor.execute(command)
           puts result.message
         rescue => ex
-          puts "--- Encountered an exception: #{ex.message}"
+          puts "Error: #{ex.message}"
           puts "[backtrace: #{ex.backtrace}]"
         end
         # puts "objects: #{@environment.objects}"

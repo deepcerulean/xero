@@ -115,12 +115,12 @@ describe Interpreter do
     expect(cmd.target).to eq('world')
   end
 
-  xit 'can navigate chained ops' do
+  it 'can navigate chained ops' do
     tokens = tokenizer.analyze('hello -> there -> world')
     ast = parser.analyze(tokens)
     cmd = interpreter.analyze(ast)
 
-    expect(cmd).to be_a(ComposeObjectsCommand)
+    expect(cmd).to be_a(DrawLinkedArrowsCommand)
     expect(cmd.objects).to contain_exactly('hello', 'there', 'world')
   end
 
@@ -136,6 +136,24 @@ describe Interpreter do
 end
 
 xdescribe Evaluator
+
+describe Arrow do
+  subject(:arrow) do
+    Arrow.new(from: 'source', to: 'target')
+  end
+
+  it 'has a source and target' do
+    expect(arrow.from).to eq('source')
+    expect(arrow.to).to eq('target')
+  end
+
+  it 'can be composed' do
+    another_arrow = Arrow.new(from: 'target', to: 'another_target')
+    composed = another_arrow.compose(arrow)
+    expect(composed.from).to eq('source')
+    expect(composed.to).to eq('another_target')
+  end
+end
 
 describe Processor do
   subject(:processor) { Processor.new(environment: environment) }
@@ -173,7 +191,7 @@ describe Processor do
     processor.evaluate('f: a -> b')
     processor.evaluate('g: b -> c')
 
-    result = processor.evaluate('h: f . g')
+    result = processor.evaluate('h: g . f')
     expect(result).to be_a(CommandResult)
     expect(result).to be_successful
 
@@ -182,9 +200,17 @@ describe Processor do
     expect(new_arrow.to).to eq('c')
   end
 
-  xit 'executes a query named entity command' do
+  it 'executes a linked arrows command' do
+    result = processor.evaluate('a -> b -> c')
+    expect(result).to be_a(CommandResult)
+    expect(result).to be_successful
+
+    expect(environment.objects).to contain_exactly('a', 'b', 'c')
+  end
+
+  it 'executes a query named entity command' do
     processor.evaluate('hello -> there')
-    expect(environment.arrows.keys).to contain_exactly('hello')
+    expect(environment.objects).to contain_exactly('hello', 'there')
 
     result = processor.evaluate('hello')
     expect(result).to be_a(CommandResult)
