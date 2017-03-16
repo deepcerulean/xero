@@ -1,6 +1,7 @@
 module Xero
   module Commands
     class Command; end
+    class Noop < Command; end
     class QueryEntityCommand < Command
       attr_reader :name
       def initialize(name:)

@@ -9,6 +9,7 @@ module Xero
   class Interpreter
     include Commands
     def analyze(ast)
+      return Noop.new if ast.nil? # do not need to explode on a noop
       raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
       if ast.is_a?(OperationNode)
         analyze_operation(ast)
@@ -243,6 +244,8 @@ module Xero
 
     def handle(command:)
       case command
+      when Noop then
+        ok('ok')
       when DrawNamedArrowCommand then
         draw_named_arrow(
           from: command.source,
