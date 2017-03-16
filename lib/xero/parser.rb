@@ -23,15 +23,13 @@ module Xero
   class LabelNode < ExpressionNode; end
   class OperationNode < ExpressionNode; end
 
-  # TODO parse out multiple statements separated by semicolons...
-  # class StatementNode < ExpressionNode; end
   class StatementListNode < ExpressionNode
     def initialize; end
     def <<(stmt); statements.push(stmt); end
     def statements; @stmts ||= [] end
     def to_s(depth: 1)
       tabs = "\n" + (' ' * depth)
-      list = statements.map {|stmt| tabs + " - " + stmt.to_s(depth: depth+1) } #.join("\n")
+      list = statements.map {|stmt| tabs + " - " + stmt.to_s(depth: depth+1) }
       tabs + "#{self.class.name}\n" +
         tabs + "list:\n#{list}\n"
     end
@@ -39,7 +37,6 @@ module Xero
   end
 
   class Parser
-    # take tokens, build ast -- and return root of the abstract syntax tree!
     def analyze(tokens)
       tokens.reject! { |token| token.is_a?(WhitespaceToken) }
       expression(tokens)

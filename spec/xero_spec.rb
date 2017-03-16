@@ -1,6 +1,8 @@
 require 'spec_helper'
 require 'xero'
 
+include Xero::Commands
+
 describe Xero do
   it "should have a VERSION constant" do
     expect(subject.const_get('VERSION')).to_not be_empty
@@ -133,5 +135,19 @@ describe Processor do
   it 'will not make arrows out of objects' do
     processor.evaluate('f: a -> b')
     expect { processor.evaluate('a: x -> y') }.to raise_error(RuntimeError, "Objects can't also be arrows")
+  end
+
+  it 'will chain compositions' do
+    processor.evaluate('f: a->b; g: b->c; h: c->d; i: h.g.f')
+    expect(environment.objects).to contain_exactly(*%w[ a b c d ])
+    expect(environment.arrows.map(&:name)).to contain_exactly('f', 'g', 'h', nil, nil, 'i')
+    the_arrow = environment.arrows.detect { |arrow| arrow.name == 'i' }
+    expect(the_arrow.from).to eq('a')
+    expect(the_arrow.to).to eq('d')
+  end
+
+  xit 'will define an arrow chain' do
+    processor.evaluate('f: x -> y -> z')
+    expect(environment.objects).to contain_exactly('x', 'y', 'z')
   end
 end

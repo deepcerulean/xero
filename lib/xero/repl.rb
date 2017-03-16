@@ -36,33 +36,7 @@ module Xero
     def handle(input)
       return if input.empty?
       if input.start_with?('.')
-        case input
-        when '.show' then
-          if !environment.arrows.any?
-            err('no arrows yet')
-          else
-            arrows = environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
-            shell_cmd = "undirender #{arrows}"
-            puts
-            puts pastel.cyan(`#{shell_cmd}`)
-          end
-        when '.list' then
-          if !environment.arrows.any?
-            err('no arrows yet')
-          else
-            puts
-            environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
-          end
-        when '.reset' then
-          puts
-          environment.clear!
-        when '.help' then
-          puts
-          puts help_message
-        else
-          err("Unknown repl command #{input}")
-        end
-        puts
+        handle_repl_command(input)
       else
         begin
           result  = @processor.evaluate(input)
@@ -79,6 +53,36 @@ module Xero
         end
         puts
       end
+    end
+
+    def handle_repl_command(input)
+      case input
+      when '.show' then
+        if !environment.arrows.any?
+          err('no arrows yet')
+        else
+          arrows = environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ').gsub("'", "`")
+          shell_cmd = "undirender #{arrows}"
+          puts
+          puts pastel.cyan(`#{shell_cmd}`)
+        end
+      when '.list' then
+        if !environment.arrows.any?
+          err('no arrows yet')
+        else
+          puts
+          environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
+        end
+      when '.reset' then
+        puts
+        environment.clear!
+      when '.help' then
+        puts
+        puts help_message
+      else
+        err("Unknown repl command #{input}")
+      end
+      puts
     end
 
     private
@@ -118,6 +122,8 @@ module Xero
       "\n  " +
       "\n  " + pastel.cyan("     .list            print out all arrows") +
       "\n  " + pastel.cyan("     .show            draw out arrow graph") +
+      "\n  " + pastel.cyan("     .reset           drop all arrows") +
+      "\n  " + pastel.cyan("     .help            show this message") +
       "\n  "
     end
 

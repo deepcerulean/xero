@@ -9,7 +9,9 @@
 ## Description
 
 compositional nanolang
+
 a tiny, very pure categoreal abstract machine
+
 "something like" just the typing fragment from ML...
 
 ## Features

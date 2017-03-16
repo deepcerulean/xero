@@ -25,7 +25,7 @@ module Xero
 
   class LabelToken < Token
     def self.pattern
-      /[a-zA-Z]+/
+      /[a-zA-Z']+/
     end
   end
 

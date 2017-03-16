@@ -1,69 +1,13 @@
 require 'xero/version'
 require 'xero/tokenizer'
 require 'xero/parser'
+require 'xero/commands'
 require 'pry'
 
 module Xero
   ## command interpreter..
-  class Command; end
-  class QueryEntityCommand < Command
-    attr_reader :name
-    def initialize(name:)
-      @name = name
-    end
-  end
-
-  class DrawArrowCommand < Command
-    attr_reader :source, :target
-    def initialize(source:, target:)
-      @source = source
-      @target = target
-    end
-  end
-
-  class ComposeArrowsCommand < Command
-    attr_reader :source, :target
-    def initialize(source:, target:)
-      @source = source
-      @target = target
-    end
-  end
-
-  class DrawNamedArrowCommand < Command
-    attr_reader :name, :source, :target
-    def initialize(name:, source:, target:)
-      @name = name
-      @source = source
-      @target = target
-    end
-  end
-
-  # this is effectively the same as draw named arrow
-  # but needs the env to de-ref the arrow defns
-  class DrawNamedCompositionCommand < Command
-    attr_reader :name, :first_arrow, :second_arrow
-    def initialize(name:, first_arrow:, second_arrow:)
-      @name = name
-      @first_arrow = first_arrow
-      @second_arrow = second_arrow
-    end
-  end
-
-  class DrawLinkedArrowsCommand < Command
-    attr_reader :objects
-    def initialize(objects:)
-      @objects = objects
-    end
-  end
-
-  class CommandList < Command
-    attr_reader :subcommands
-    def initialize(subcommands:)
-      @subcommands = subcommands
-    end
-  end
-
   class Interpreter
+    include Commands
     def analyze(ast)
       raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
       if ast.is_a?(OperationNode)
@@ -88,6 +32,9 @@ module Xero
           DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
         when DrawArrowCommand then
           DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
+        when DrawChainedCompositionCommand then
+          DrawNamedCompositionChainCommand.new(name: name, arrows: arrow_cmd.arrows)
+          # DrawNamedArrowCommand.new(name: name, source: arrow_cmd.arrows.first.source, target: arrow_cmd.arrows.last.target)
         else # TODO linked arrow defs..
           raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
         end
@@ -111,10 +58,20 @@ module Xero
           end
         end
       when :dot then
-        raise "can only compose two named arrows at once :(" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+        raise "First element of a composition must be a label" unless ast.left.is_a?(LabelNode)
+        if ast.right.is_a?(LabelNode)
         #? [ast.left.value] : analyze(ast.left).arrows
         # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
-        ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
+          ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
+        else
+          right_cmd = analyze(ast.right)
+          case right_cmd
+          when ComposeArrowsCommand then # meld with this one composition, linking three arrows
+            DrawChainedCompositionCommand.new(arrows: [ast.left.value, right_cmd.source, right_cmd.target])
+          when DrawChainedCompositionCommand then # meld with arrows arr
+            DrawChainedCompositionCommand.new(arrows: [ast.left.value] + right_cmd.arrows)
+          end
+        end
       else
         raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
       end
@@ -203,14 +160,18 @@ module Xero
   end
 
   class Controller
+    include Commands
     def initialize(env)
       @env = env
     end
 
     def query_entity(name:)
       if (matching_obj=@env.objects.detect { |obj| obj == name })
-        referencing_arrows = @env.arrows.select { |arrow| arrow.from == matching_obj || arrow.to == matching_obj }
-        ok("object #{matching_obj}, referenced by #{referencing_arrows.map(&:to_s).join('; ')}")
+        referencing_arrows = @env.arrows.select do |arrow|
+          arrow.from == matching_obj || arrow.to == matching_obj
+        end
+        described_references = referencing_arrows.map(&:to_s).join('; ')
+        ok("object #{matching_obj}, referenced by #{described_references}")
       elsif (matching_arrow=@env.arrows.detect { |a| a.name == name })
         ok("arrow #{matching_arrow}")
       else
@@ -221,8 +182,6 @@ module Xero
     def compose_arrows(f,g)
       first_arrow = @env.arrows.detect { |arrow| arrow.name == g }
       next_arrow  = @env.arrows.detect { |arrow| arrow.name == f }
-
-      # compose them
       composition = first_arrow.compose(next_arrow)
       create_anonymous_arrow(from: composition.from, to: composition.to)
       ok("composed arrows #{first_arrow} and #{next_arrow} yielding #{composition}")
@@ -256,6 +215,30 @@ module Xero
         handle(command: command)
       end
       ok(results.map(&:message).join('; '))
+    end
+
+    def draw_chained_composition(arrows:)
+      composition_results = arrows.each_cons(2).map do |l,r|
+        compose_arrows(r,l)
+      end
+      results_messages = composition_results.map(&:message).join('; ')
+      if composition_results.all?(&:successful?)
+        ok(results_messages)
+      else
+        err("at least one composition was not successful: #{results_messages}")
+      end
+    end
+
+    def draw_named_composition_chain(name:, arrows:)
+      composition_result = draw_chained_composition(arrows: arrows)
+      if composition_result.successful?
+        first_arrow = @env.arrows.detect { |arrow| arrows.first == arrow.name }
+        last_arrow  = @env.arrows.detect { |arrow| arrows.last  == arrow.name }
+        arrow_result = draw_named_arrow(name: name, from: last_arrow.from, to: first_arrow.to)
+        ok("drew named composition chain #{name}: #{composition_result.message}; #{arrow_result.message}")
+      else
+        err("could not draw composition chain #{name}, #{composition_result.message}")
+      end
     end
 
     def handle(command:)
@@ -294,8 +277,17 @@ module Xero
         handle_multiple(
           commands: command.subcommands
         )
+      when DrawChainedCompositionCommand then
+        draw_chained_composition(
+          arrows: command.arrows
+        )
+      when DrawNamedCompositionChainCommand then
+        draw_named_composition_chain(
+          name: command.name,
+          arrows: command.arrows
+        )
       else
-        err(["Unknown command type", "please implement a command handler for #{command.class}", command])
+        raise("Unknown command type, may need to implement a command handler for #{command.class}..")
       end
     end
 
@@ -313,8 +305,6 @@ module Xero
     def create_or_name_arrow(name:,to:,from:)
       raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
       raise "Objects can't also be arrows" if @env.objects.any? { |obj| name == obj }
-      puts "--- CREATE (OR ASSIGN NAME TO) ARROW #{name} FROM #{from} TO #{to}"
-
       if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
         if existing_arrow.name.nil?
           raise "Arrow names must be unique" if @env.arrows.any? { |arrow| arrow.name == name }
