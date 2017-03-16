@@ -8,7 +8,9 @@ if File.directory?(File.join(root,'.git'))
       require 'xero'
       require 'xero/repl'
 
-      repl = Xero::Repl.new
+      env = Xero::Environment.new
+      processor = Xero::Processor.new(environment: env)
+      repl = Xero::Repl.new(processor: processor)
       repl.launch!
     rescue LoadError => e
       warn e.message

@@ -124,22 +124,16 @@ module Xero
 
   # wrap tokenize-parse-interpret into one component
   class Evaluator
-    def initialize #(env)
-      # @env = Environment.new
+    def initialize
       @tokenizer = Tokenizer.new
       @parser = Parser.new
       @interpreter = Interpreter.new
-      # @processor = Processor.new(environment: @env)
     end
 
     def determine(string)
-      # puts "[xero eval #{string}]"
       tokens = @tokenizer.analyze(string)
-      # puts "tokens: #{tokens}"
       ast = @parser.analyze(tokens)
-      # puts "ast: #{ast}"
       command = @interpreter.analyze(ast)
-      # puts "command: #{command}"
       command
     end
   end
@@ -338,6 +332,7 @@ module Xero
       end
     end
 
+    private
     def ok(msg)
       CommandSuccessful.new(msg)
     end
@@ -350,20 +345,17 @@ module Xero
   class Processor
     def initialize(environment:)
       @controller = Controller.new(environment)
-    end
-
-    def execute(command)
-      @controller.handle(command: command)
+      @evaluator  = Evaluator.new
     end
 
     def evaluate(string)
-      cmd = evaluator.determine(string)
+      cmd = @evaluator.determine(string)
       execute(cmd)
     end
 
-    private
-    def evaluator
-      @evaluator ||= Evaluator.new
+    protected
+    def execute(command)
+      @controller.handle(command: command)
     end
   end
 end

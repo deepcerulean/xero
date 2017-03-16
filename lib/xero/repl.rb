@@ -5,40 +5,51 @@ module Xero
   class ReplCommand; end
 
   class Repl
-    def initialize
-      @environment = Environment.new
-      @processor   = Processor.new(environment: @environment)
-      @evaluator   = Evaluator.new
+    attr_reader :halted
+
+    def initialize(processor:) #environment:, processor:)
+      # @environment = environment # Environment.new
+      @processor   = processor #Processor.new(environment: @environment)
+      @halted = true
     end
 
     def launch!
+      @halted = false
       puts welcome_message
       puts
       debug "Tip: try .help to view the manual."
       puts
-      while input = Readline.readline(prompt, true)
+      while !halted? && input = Readline.readline(prompt, true)
         handle(input)
       end
+      @halted = true
     end
 
+    def halted?; !!@halted end
+    def halt!; @halted = true end
+
     protected
+
+    def environment
+      @processor.environment
+    end
 
     def handle(input)
       return if input.empty?
       if input.start_with?('.')
         case input
         when '.show' then
-          arrows = @environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
+          arrows = environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
           shell_cmd = "undirender #{arrows}"
           puts
           puts pastel.cyan(`#{shell_cmd}`)
         when '.list' then
           puts
-          @environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
+          environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
           puts
         when '.reset' then
           puts
-          @environment.clear!
+          environment.clear!
           puts
         when '.help' then
           puts
@@ -49,8 +60,7 @@ module Xero
         end
       else
         begin
-          command = @evaluator.determine(input)
-          result  = @processor.execute(command)
+          result  = @processor.evaluate(input)
           message = result.message
           if result.successful?
             okay(message)

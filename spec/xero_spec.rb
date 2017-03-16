@@ -79,13 +79,8 @@ describe Processor do
   subject(:processor) { Processor.new(environment: environment) }
   let(:environment) { Environment.new }
 
-  let(:evaluator) do
-    Evaluator.new
-  end
-
   it 'executes a compose objects command' do
-    cmd    = evaluator.determine('hello -> world')
-    result = processor.execute(cmd)
+    result = processor.evaluate('hello -> world')
 
     expect(result).to be_a(CommandResult)
     expect(result).to be_successful
@@ -97,9 +92,7 @@ describe Processor do
   end
 
   it 'executes a definition command' do
-    cmd    = evaluator.determine('hello: there -> world')
-    result = processor.execute(cmd)
-
+    result = processor.evaluate('hello: there -> world')
     expect(result).to be_a(CommandResult)
     expect(result).to be_successful
     new_arrow = environment.arrows.detect { |arr| arr.name == 'hello' }
