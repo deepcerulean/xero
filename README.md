@@ -18,6 +18,8 @@ TODO: Description
 
 ## Requirements
 
+  - `npm install -g undirender` for .show to visualize objects/arrows
+
 ## Install
 
     $ gem install xero
