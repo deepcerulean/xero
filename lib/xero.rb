@@ -56,55 +56,69 @@ module Xero
     end
   end
 
+  class CommandList < Command
+    attr_reader :subcommands
+    def initialize(subcommands:)
+      @subcommands = subcommands
+    end
+  end
+
   class Interpreter
     def analyze(ast)
       raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
       if ast.is_a?(OperationNode)
-        case ast.value
-        when :defn then
-          raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
-          name = ast.left.value
-          arrow_cmd = analyze(ast.right)
-          case arrow_cmd
-          when ComposeArrowsCommand then
-            DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
-          when DrawArrowCommand then
-            DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
-          else # TODO linked arrow defs..
-            raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
-          end
-        when :arrow then
-          if ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
-            DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
-          else
-            if ast.left.is_a?(LabelNode)
-              # try to process the right into a series of draw arrow commands...
-              right_cmd = analyze(ast.right)
-              case right_cmd
-              when DrawArrowCommand # meld with this one arrow, linking 3 objs
-                DrawLinkedArrowsCommand.new(objects: [ast.left.value, right_cmd.source, right_cmd.target])
-              when DrawLinkedArrowsCommand # meld with objs arr
-                DrawLinkedArrowsCommand.new(objects: [ast.left.value] + right_cmd.objects)
-              else
-                raise "Parsed unknown command #{right_cmd} from #{ast.right}"
-              end
-            else
-              raise "for now can only draw arrows starting from a named object..."
-            end
-          end
-        when :dot then
-          raise "can only compose two named arrows at once :(" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
-          #? [ast.left.value] : analyze(ast.left).arrows
-          # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
-          ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
-        else
-          raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
-        end
+        analyze_operation(ast)
+      elsif ast.is_a?(StatementListNode)
+        CommandList.new(subcommands: ast.statements.map { |stmt| analyze(stmt) })
       elsif ast.is_a?(LabelNode)
         QueryEntityCommand.new(name: ast.value)
       else
         raise "unknown root node type #{ast.class} (need OperationNode or LabelNode): #{ast}"
       end
+    end
+
+    def analyze_operation(ast)
+      case ast.value
+      when :defn then
+        raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
+        name = ast.left.value
+        arrow_cmd = analyze(ast.right)
+        case arrow_cmd
+        when ComposeArrowsCommand then
+          DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
+        when DrawArrowCommand then
+          DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
+        else # TODO linked arrow defs..
+          raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
+        end
+      when :arrow then
+        if ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+          DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
+        else
+          if ast.left.is_a?(LabelNode)
+            # try to process the right into a series of draw arrow commands...
+            right_cmd = analyze(ast.right)
+            case right_cmd
+            when DrawArrowCommand # meld with this one arrow, linking 3 objs
+              DrawLinkedArrowsCommand.new(objects: [ast.left.value, right_cmd.source, right_cmd.target])
+            when DrawLinkedArrowsCommand # meld with objs arr
+              DrawLinkedArrowsCommand.new(objects: [ast.left.value] + right_cmd.objects)
+            else
+              raise "Parsed unknown command #{right_cmd} from #{ast.right}"
+            end
+          else
+            raise "for now can only draw arrows starting from a named object..."
+          end
+        end
+      when :dot then
+        raise "can only compose two named arrows at once :(" unless ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+        #? [ast.left.value] : analyze(ast.left).arrows
+        # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
+        ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
+      else
+        raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
+      end
+
     end
   end
 
@@ -189,6 +203,10 @@ module Xero
     def objects
       arrows.flat_map { |arrow| [arrow.from, arrow.to] }.uniq
     end
+
+    def clear!
+      @arrows = []
+    end
   end
 
   class Controller
@@ -240,6 +258,54 @@ module Xero
       ok(results.map(&:message).join('; '))
     end
 
+    def handle_multiple(commands:)
+      results = commands.map do |command|
+        handle(command: command)
+      end
+      ok(results.map(&:message).join('; '))
+    end
+
+    def handle(command:)
+      case command
+      when DrawNamedArrowCommand then
+        draw_named_arrow(
+          from: command.source,
+          to: command.target,
+          name: command.name
+        )
+      when DrawNamedCompositionCommand then
+        draw_named_composition(
+          name: command.name,
+          first_arrow: command.first_arrow,
+          second_arrow: command.second_arrow
+        )
+      when DrawArrowCommand then
+        draw_arrow(
+          from: command.source,
+          to: command.target
+        )
+      when ComposeArrowsCommand then
+        compose_arrows(
+          command.target,
+          command.source
+        )
+      when QueryEntityCommand then
+        query_entity(
+          name: command.name
+        )
+      when DrawLinkedArrowsCommand then
+        draw_linked_arrows(
+          between: command.objects
+        )
+      when CommandList then
+        handle_multiple(
+          commands: command.subcommands
+        )
+      else
+        err(["Unknown command type", "please implement a command handler for #{command.class}", command])
+      end
+    end
+
     protected
     def create_anonymous_arrow(to:,from:)
       raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
@@ -287,42 +353,7 @@ module Xero
     end
 
     def execute(command)
-      case command
-      when DrawNamedArrowCommand then
-        @controller.draw_named_arrow(
-          from: command.source,
-          to: command.target,
-          name: command.name
-        )
-      when DrawNamedCompositionCommand then
-        @controller.draw_named_composition(
-          name: command.name,
-          first_arrow: command.first_arrow,
-          second_arrow: command.second_arrow
-        )
-      when DrawArrowCommand then
-        @controller.draw_arrow(
-          from: command.source,
-          to: command.target
-          # objects: command.objects
-        )
-      when ComposeArrowsCommand then
-        @controller.compose_arrows(
-          command.target,
-          command.source
-          # arrows: command.arrows
-        )
-      when QueryEntityCommand then
-        @controller.query_entity(
-          name: command.name
-        )
-      when DrawLinkedArrowsCommand then
-        @controller.draw_linked_arrows(
-          between: command.objects
-        )
-      else
-        CommandFailed.new(["Unknown command type", "please implement a command handler for #{command.class}", command])
-      end
+      @controller.handle(command: command)
     end
 
     def evaluate(string)

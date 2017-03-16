@@ -1,5 +1,5 @@
 require 'spec_helper'
-# require 'xero'
+require 'xero'
 
 describe Xero do
   it "should have a VERSION constant" do
@@ -43,6 +43,15 @@ describe Interpreter do
     expect(cmd).to be_a(ComposeArrowsCommand)
     expect(cmd.source).to eq('f') #contain_exactly('f', 'g')
     expect(cmd.target).to eq('g')
+  end
+
+  it 'can handle multiple statements separated by semicolons' do
+    tokens = tokenizer.analyze('a -> b; c -> d')
+    ast = parser.analyze(tokens)
+    cmd = interpreter.analyze(ast)
+
+    expect(cmd).to be_a(CommandList)
+    expect(cmd.subcommands.first).to be_a(DrawArrowCommand)
   end
 end
 

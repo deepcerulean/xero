@@ -36,6 +36,10 @@ module Xero
           puts
           @environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
           puts
+        when '.reset' then
+          puts
+          @environment.clear!
+          puts
         when '.help' then
           puts
           puts help_message

@@ -31,8 +31,9 @@ module Xero
     def statements; @stmts ||= [] end
     def to_s(depth: 1)
       tabs = "\n" + (' ' * depth)
+      list = statements.map {|stmt| tabs + " - " + stmt.to_s(depth: depth+1) } #.join("\n")
       tabs + "#{self.class.name}\n" +
-        tabs + "list:\n#{statements.map {|stmt| stmt.to_s(depth: depth+1) }.join('\n')}\n"
+        tabs + "list:\n#{list}\n"
     end
     alias :inspect :to_s
   end
