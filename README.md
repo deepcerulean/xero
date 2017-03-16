@@ -23,12 +23,44 @@ a tiny, very pure categoreal abstract machine
   - statement lists with ';' (`a->b; c->d; g.f`)
   - interactive repl for exploration
 
-## Examples
+## Ideas
 
-Here's a representative session at the repl:
+  A microlanguage designed for composition, intended not to do much on its own, but to possibly be embedded in a variety
+  of contexts -- I can imagine chaining tools or services together, but the core impulse here is that
+  composition really a very generic idea.
+
+  Largely a sandbox for experimenting with a variety of different category ideas. The next major targets are parens and a multiplcation
+  operator so we can model products and sums. Then exponents for function calls, and we may be Turing complete in some weird sense, but I
+  want to understand it much better. It sure seems like it's too pure to get any work done on its own, and needs an embedding semantics surrounding it.
+
+  One idea is for something like the following to work -- Imagine we have a package
+  'My::Env' that we want to embed a Xero repl 'within'...
+
+    require 'xero'
+
+    # some 'embedding' package
+    require 'my/env/world'
+    world = My::Env::World.new
+
+    Xero::Repl.new.launch! do
+      on(:arrow) do |left,right|
+        world.connect(left,right)
+      end
+      after_each { world.step }
+    end
+
+## Requirements
+
+  - `npm install -g undirender` for repl .show to visualize objects and arrows
+
+## Install
+
+    $ gem install xero
+
+## Synopsis
 
 ```
-  $ clear; xero
+  $ xero
   XERO 0.1.0
   ------------------------------
 
@@ -95,38 +127,6 @@ Here's a representative session at the repl:
 
     xero>
 ```
-
-
-## Ideas
-
-  One idea is for something like the following to work... Imagine we have a package
-  'My::Env' that we want to embed a Xero repl 'within'...
-
-    require 'xero'
-
-    # some 'embedding' package
-    require 'my/env/world'
-    world = My::Env::World.new
-
-    Xero::Repl.new.launch! do
-      on(:arrow) do |left,right|
-        world.connect(left,right)
-      end
-      after_each { world.step }
-    end
-
-## Requirements
-
-  - `npm install -g undirender` for repl .show to visualize objects and arrows
-
-## Install
-
-    $ gem install xero
-
-## Synopsis
-
-    $ xero
-
 ## Copyright
 
 Copyright (c) 2017 Joseph Weissman
