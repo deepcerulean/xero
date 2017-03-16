@@ -2,83 +2,10 @@ require 'xero/version'
 require 'xero/tokenizer'
 require 'xero/parser'
 require 'xero/commands'
+require 'xero/interpreter'
 require 'pry'
 
 module Xero
-  ## command interpreter..
-  class Interpreter
-    include Commands
-    def analyze(ast)
-      return Noop.new if ast.nil? # do not need to explode on a noop
-      raise "AST must be an ExpressionNode! (was #{ast.class}: #{ast})" unless ast.is_a?(ExpressionNode)
-      if ast.is_a?(OperationNode)
-        analyze_operation(ast)
-      elsif ast.is_a?(StatementListNode)
-        CommandList.new(subcommands: ast.statements.map { |stmt| analyze(stmt) })
-      elsif ast.is_a?(LabelNode)
-        QueryEntityCommand.new(name: ast.value)
-      else
-        raise "unknown root node type #{ast.class} (need OperationNode or LabelNode): #{ast}"
-      end
-    end
-
-    def analyze_operation(ast)
-      case ast.value
-      when :defn then
-        raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
-        name = ast.left.value
-        arrow_cmd = analyze(ast.right)
-        case arrow_cmd
-        when ComposeArrowsCommand then
-          DrawNamedCompositionCommand.new(name: name, first_arrow: arrow_cmd.source, second_arrow: arrow_cmd.target)
-        when DrawArrowCommand then
-          DrawNamedArrowCommand.new(name: name, source: arrow_cmd.source, target: arrow_cmd.target)
-        when DrawChainedCompositionCommand then
-          DrawNamedCompositionChainCommand.new(name: name, arrows: arrow_cmd.arrows)
-          # DrawNamedArrowCommand.new(name: name, source: arrow_cmd.arrows.first.source, target: arrow_cmd.arrows.last.target)
-        else # TODO linked arrow defs..
-          raise "Unknown type of definition (not arrow or composition of arrows): #{arrow_cmd}"
-        end
-      when :arrow then
-        if ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
-          DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
-        else
-          if ast.left.is_a?(LabelNode)
-            # try to process the right into a series of draw arrow commands...
-            right_cmd = analyze(ast.right)
-            case right_cmd
-            when DrawArrowCommand # meld with this one arrow, linking 3 objs
-              DrawLinkedArrowsCommand.new(objects: [ast.left.value, right_cmd.source, right_cmd.target])
-            when DrawLinkedArrowsCommand # meld with objs arr
-              DrawLinkedArrowsCommand.new(objects: [ast.left.value] + right_cmd.objects)
-            else
-              raise "Parsed unknown command #{right_cmd} from #{ast.right}"
-            end
-          else
-            raise "for now can only draw arrows starting from a named object..."
-          end
-        end
-      when :dot then
-        raise "First element of a composition must be a label" unless ast.left.is_a?(LabelNode)
-        if ast.right.is_a?(LabelNode)
-        #? [ast.left.value] : analyze(ast.left).arrows
-        # right_arrows = ast.right.is_a?(LabelNode) ? [ast.right.value] : analyze(ast.right).arrows
-          ComposeArrowsCommand.new(source: ast.left.value, target: ast.right.value) # left_arrows + right_arrows)
-        else
-          right_cmd = analyze(ast.right)
-          case right_cmd
-          when ComposeArrowsCommand then # meld with this one composition, linking three arrows
-            DrawChainedCompositionCommand.new(arrows: [ast.left.value, right_cmd.source, right_cmd.target])
-          when DrawChainedCompositionCommand then # meld with arrows arr
-            DrawChainedCompositionCommand.new(arrows: [ast.left.value] + right_cmd.arrows)
-          end
-        end
-      else
-        raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
-      end
-    end
-  end
-
   # wrap tokenize-parse-interpret into one component
   class Evaluator
     def initialize
@@ -132,7 +59,7 @@ module Xero
       if other.to == self.from
         Arrow.new(from: other.from, to: self.to)
       else
-        raise "Can't compose #{other} -> #{self} (non-matching ends)"
+        raise "Can't compose #{other} and #{self} (non-matching ends)"
       end
     end
 
@@ -208,26 +135,25 @@ module Xero
       between.each_cons(2) do |from,to|
         results << draw_arrow(from: from, to: to)
       end
-      ok(results.map(&:message).join('; '))
+      check results
+      # ok(results.map(&:message).join('; '))
     end
 
-    def handle_multiple(commands:)
-      results = commands.map do |command|
-        handle(command: command)
+    def draw_named_arrow_links(name:, objects:)
+      link_arrows_result=draw_linked_arrows(between: objects)
+      if link_arrows_result.successful?
+        name_arrow_result = draw_named_arrow(from: objects.first, to: objects.last, name: name)
+        check([link_arrows_result, name_arrow_result])
+      else
+        link_arrows_result
       end
-      ok(results.map(&:message).join('; '))
     end
 
     def draw_chained_composition(arrows:)
       composition_results = arrows.each_cons(2).map do |l,r|
         compose_arrows(r,l)
       end
-      results_messages = composition_results.map(&:message).join('; ')
-      if composition_results.all?(&:successful?)
-        ok(results_messages)
-      else
-        err("at least one composition was not successful: #{results_messages}")
-      end
+      check composition_results
     end
 
     def draw_named_composition_chain(name:, arrows:)
@@ -242,10 +168,17 @@ module Xero
       end
     end
 
+    def handle_multiple(commands:)
+      results = commands.map do |command|
+        handle(command: command)
+      end
+      check results
+    end
+
     def handle(command:)
       case command
       when Noop then
-        ok('ok')
+        ok('(no-op)')
       when DrawNamedArrowCommand then
         draw_named_arrow(
           from: command.source,
@@ -289,6 +222,11 @@ module Xero
           name: command.name,
           arrows: command.arrows
         )
+      when DrawNamedArrowLinksCommand then
+        draw_named_arrow_links(
+          name: command.name,
+          objects: command.objects
+        )
       else
         raise("Unknown command type, may need to implement a command handler for #{command.class}..")
       end
@@ -296,9 +234,9 @@ module Xero
 
     protected
     def create_anonymous_arrow(to:,from:)
-      raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
+      return err("Arrows can't point to arrows") if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
       if @env.arrows.any? { |arrow| arrow.from == from && arrow.to == to }
-        err("arrow already exists between #{from} and #{to}")
+        ok("arrow already exists between #{from} and #{to}")
       else
         @env.arrows << Arrow.new(from: from, to: to)
         ok("created anonymous arrow from #{from} to #{to}")
@@ -306,21 +244,35 @@ module Xero
     end
 
     def create_or_name_arrow(name:,to:,from:)
-      raise "Arrows can't point to arrows" if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
-      raise "Objects can't also be arrows" if @env.objects.any? { |obj| name == obj }
+      return err("Arrows can't point to arrows") if @env.arrows.map(&:name).any? { |nm| nm == to || nm == from }
+      return err("Objects can't also be arrows") if @env.objects.any? { |obj| name == obj } || (to == name) || (from == name)
       if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
         if existing_arrow.name.nil?
-          raise "Arrow names must be unique" if @env.arrows.any? { |arrow| arrow.name == name }
+          return err("Arrow names must be unique") if @env.arrows.any? { |arrow| arrow.name == name }
           # is this a valid name??
           existing_arrow.name = name
           ok("unnamed arrow from #{from} to #{to} was given name #{name}")
         else
-          err("named arrow #{name} already exists between #{from} and #{to}")
+          ok("named arrow #{name} already exists between #{from} and #{to}")
         end
       else
-        raise "Arrow names must be unique" if @env.arrows.any? { |arrow| arrow.name == name }
+        return err("Arrow names must be unique") if @env.arrows.any? { |arrow| arrow.name == name }
         @env.arrows << Arrow.new(from: from, to: to, name: name)
         ok("created arrow named #{name} from #{from} to #{to}")
+      end
+    end
+
+    def check(results)
+      message = if results.map(&:message).uniq.length == 1
+                  results.first.message
+                else
+                  results.map(&:message).join('; ')
+                end
+
+      if results.all?(&:successful?)
+        ok message
+      else
+        err message
       end
     end
 

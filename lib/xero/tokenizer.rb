@@ -6,7 +6,8 @@ module Xero
     end
 
     def to_s
-      "#{self.class.name}[#@content]"
+      @content
+      # "#{self.class.name}[#@content]"
     end
     alias :inspect :to_s
   end
@@ -37,6 +38,12 @@ module Xero
     end
   end
 
+  class RouteToken < OpToken
+    def self.pattern
+      /--/
+    end
+  end
+
   class DotToken < OpToken
     def self.pattern
       /\./
@@ -53,8 +60,8 @@ module Xero
     def analyze(string)
       scanner = StringScanner.new(string)
       tokens = []
-      halted = false
-      until scanner.eos? || halted
+      # halted = false
+      until scanner.eos? # || halted
         any_matched = false
         token_kinds.each do |token_kind|
           matched_token = scanner.scan(token_kind.pattern)
@@ -64,13 +71,18 @@ module Xero
             break
           end
         end
-        halted = true if !any_matched
+        if !any_matched
+          # halted = true
+          raise("syntax error in '#{string}' at '#{scanner.rest}'")
+        end
       end
+      # if halted
+      # end
       tokens
     end
 
     def token_kinds
-      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken, SemicolonToken ]
+      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken, SemicolonToken, RouteToken ]
     end
   end
 end

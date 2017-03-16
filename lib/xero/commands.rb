@@ -9,6 +9,14 @@ module Xero
       end
     end
 
+    class QueryArrowCommand < Command
+      attr_reader :source, :target
+      def initialize(source:, target:)
+        @source = source
+        @target = target
+      end
+    end
+
     class DrawArrowCommand < Command
       attr_reader :source, :target
       def initialize(source:, target:)
@@ -47,6 +55,14 @@ module Xero
     class DrawLinkedArrowsCommand < Command
       attr_reader :objects
       def initialize(objects:)
+        @objects = objects
+      end
+    end
+
+    class DrawNamedArrowLinksCommand < Command
+      attr_reader :name, :objects
+      def initialize(name:, objects:)
+        @name = name
         @objects = objects
       end
     end

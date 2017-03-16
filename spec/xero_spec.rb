@@ -134,7 +134,13 @@ describe Processor do
 
   it 'will not make arrows out of objects' do
     processor.evaluate('f: a -> b')
-    expect { processor.evaluate('a: x -> y') }.to raise_error(RuntimeError, "Objects can't also be arrows")
+    result = processor.evaluate('a: x -> y')
+    expect(result).not_to be_successful
+    expect(result.message).to eq("Objects can't also be arrows")
+
+    result = processor.evaluate('g: x -> g')
+    expect(result).not_to be_successful
+    expect(result.message).to eq("Objects can't also be arrows")
   end
 
   it 'will chain compositions' do
@@ -146,8 +152,15 @@ describe Processor do
     expect(the_arrow.to).to eq('d')
   end
 
-  xit 'will define an arrow chain' do
+  it 'will define an arrow chain' do
     processor.evaluate('f: x -> y -> z')
     expect(environment.objects).to contain_exactly('x', 'y', 'z')
+  end
+
+  xit 'will answer a route query' do
+    processor.evaluate('a->b->c')
+    result = processor.evaluate('a--c')
+    expect(result).to be_successful
+    expect(result.solution).to contain_exactly('a', 'b', 'c')
   end
 end

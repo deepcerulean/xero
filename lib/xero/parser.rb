@@ -44,11 +44,12 @@ module Xero
 
     protected
     def expression(tokens)
+      raise "Empty statement is not an expression!" unless tokens.any?
       if tokens.length == 1
         the_token = tokens.first
         return label(the_token) if label(the_token)
       else
-        statement_list(tokens) || operation(tokens)
+        statement_list(tokens) || operation(tokens) || (raise "could not parse statement: '#{tokens.map(&:to_s).join(' ')}'; was expecting a statement list or operation (maybe incomplete statement?)")
       end
     end
 
@@ -75,6 +76,7 @@ module Xero
         when ArrowToken then :arrow
         when ColonToken then :defn
         when DotToken then :dot
+        when RouteToken then :route
         end
       end
     end
