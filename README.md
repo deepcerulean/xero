@@ -4,20 +4,21 @@
 * [Documentation](http://rubydoc.info/gems/xero/frames)
 * [Email](mailto:jweissman1986 at gmail.com)
 
-[![Code Climate GPA](https://codeclimate.com/github//xero/badges/gpa.svg)](https://codeclimate.com/github//xero)
+[![Code Climate GPA](https://codeclimate.com/github/deepcerulean/xero/badges/gpa.svg)](https://codeclimate.com/github/deepcerulean/xero)
 
 ## Description
 
 compositional nanolang
 a tiny, very pure categoreal abstract machine
-implementing "something like" just the typing fragment from ML...
+"something like" just the typing fragment from ML...
 
 ## Features
 
   - labelled *objects* strings made only of letters (a-zA-Z)
-  - define arrows with '->'
-  - named arrows with ':' (`f: a->b`)
-  - statement lists (`a->b; c->d`)
+  - define arrows with one or several '->' (`X -> Y -> Z`)
+  - name arrows with ':' (`f: a->b`)
+  - compose arrows with '.' ('g: b->c; g.f')
+  - statement lists with ';' (`a->b; c->d; g.f`)
   - interactive repl for exploration
 
 ## Examples
