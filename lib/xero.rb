@@ -27,6 +27,9 @@ module Xero
   class LabelNode < ExpressionNode; end
   class OperationNode < ExpressionNode; end
 
+  # TODO parse out multiple statements separated by semicolons...
+  # class StatementNode < ExpressionNode
+
   class Parser
     # take tokens, build ast -- and return root of the abstract syntax tree!
     def analyze(tokens)
@@ -272,7 +275,6 @@ module Xero
     end
 
     def compose_arrows(f,g)
-      # puts "--- COMPOSE ARROWS (=#{f}, g=#{g})"
       first_arrow = @env.arrows.detect { |arrow| arrow.name == g }
       next_arrow  = @env.arrows.detect { |arrow| arrow.name == f }
 
@@ -321,15 +323,17 @@ module Xero
       raise "Objects can't also be arrows" if @env.objects.any? { |obj| name == obj }
       puts "--- CREATE (OR ASSIGN NAME TO) ARROW #{name} FROM #{from} TO #{to}"
 
-
       if (existing_arrow=@env.arrows.detect { |arrow| arrow.from == from && arrow.to == to })
         if existing_arrow.name.nil?
+          raise "Arrow names must be unique" if @env.arrows.any? { |arrow| arrow.name == name }
+          # is this a valid name??
           existing_arrow.name = name
           ok("unnamed arrow from #{from} to #{to} was given name #{name}")
         else
           err("named arrow #{name} already exists between #{from} and #{to}")
         end
       else
+        raise "Arrow names must be unique" if @env.arrows.any? { |arrow| arrow.name == name }
         @env.arrows << Arrow.new(from: from, to: to, name: name)
         ok("created arrow named #{name} from #{from} to #{to}")
       end

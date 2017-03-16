@@ -5,52 +5,101 @@ module Xero
   class ReplCommand; end
 
   class Repl
-    def initialize()
+    def initialize
       @environment = Environment.new
-      @processor = Processor.new(environment: @environment)
-      @evaluator = Evaluator.new
+      @processor   = Processor.new(environment: @environment)
+      @evaluator   = Evaluator.new
     end
 
     def launch!
       puts welcome_message
       puts
+      debug "Tip: try .help to view the manual."
       puts
-      while input = Readline.readline(pastel.blue('> '), true)
-        if input == '.show' then
-          puts "--- would draw using undirender"
-          arrows = @environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
-          p [ :arrows, arrows ]
-          shell_cmd = "undirender #{arrows}"
-          result = `#{shell_cmd}`
-          puts result
-          puts
-        else
-          begin
-            command = @evaluator.determine(input)
-            result = @processor.execute(command)
-            message = result.message.capitalize
-            if result.successful?
-              puts pastel.green(message)
-            else
-              puts pastel.red(message)
-            end
-            puts
-          rescue => ex
-            puts pastel.red("Error: #{ex.message}")
-            puts "[backtrace: #{ex.backtrace}]"
-          end
-          puts
-          # puts "objects: #{@environment.objects}"
-          # puts "arrows: #{@environment.arrows}
-          # puts "dictionary: #{@environment.dictionary}"
-        end
+      while input = Readline.readline(prompt, true)
+        handle(input)
       end
     end
 
     protected
 
+    def handle(input)
+      return if input.empty?
+      if input.start_with?('.')
+        case input
+        when '.show' then
+          arrows = @environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
+          shell_cmd = "undirender #{arrows}"
+          puts
+          puts pastel.cyan(`#{shell_cmd}`)
+        when '.list' then
+          puts
+          @environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
+          puts
+        when '.help' then
+          puts
+          puts help_message
+          puts
+        else
+          err("Unknown repl command #{input}")
+        end
+      else
+        begin
+          command = @evaluator.determine(input)
+          result  = @processor.execute(command)
+          message = result.message
+          if result.successful?
+            okay(message)
+          else
+            err(message)
+          end
+          puts
+        rescue => ex
+          err(ex.message)
+          debug(ex.backtrace)
+        end
+        puts
+      end
+    end
+
+    private
+    def okay(msg)
+      puts "  " + pastel.green(msg)
+    end
+
+    def info(msg)
+      puts "  " + pastel.white(msg)
+    end
+
+    def err(msg)
+      puts "  " + pastel.red(msg)
+    end
+
+    def debug(msg)
+      puts pastel.dim(msg)
+    end
+
+    def prompt
+      pastel.blue('  xero> ')
+    end
+
     def welcome_message
-      pastel.white("XERO #{Xero::VERSION}\n" + '-'*30)
+      pastel.white("XERO #{Xero::VERSION}\n" + '-'*30 + "\n\n\n")
+    end
+
+    def help_message
+      "\n  " +
+      "\n  " + pastel.white("WELCOME TO XERO!") +
+      "\n  " +
+      "\n  " + pastel.cyan("   define arrow       f: a -> b; g: b -> c") +
+      "\n  " + pastel.cyan("   compose arrow      g . f") +
+      "\n  " +
+      "\n  " + pastel.dim("   repl commands") +
+      "\n  " + pastel.dim("   -------------") +
+      "\n  " +
+      "\n  " + pastel.cyan("     .list            print out all arrows") +
+      "\n  " + pastel.cyan("     .show            draw out arrow graph") +
+      "\n  "
     end
 
     def pastel
