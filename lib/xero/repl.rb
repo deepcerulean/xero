@@ -7,9 +7,8 @@ module Xero
   class Repl
     attr_reader :halted
 
-    def initialize(processor:) #environment:, processor:)
-      # @environment = environment # Environment.new
-      @processor   = processor #Processor.new(environment: @environment)
+    def initialize(processor:)
+      @processor   = processor
       @halted = true
     end
 
@@ -39,25 +38,31 @@ module Xero
       if input.start_with?('.')
         case input
         when '.show' then
-          arrows = environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
-          shell_cmd = "undirender #{arrows}"
-          puts
-          puts pastel.cyan(`#{shell_cmd}`)
+          if !environment.arrows.any?
+            err('no arrows yet')
+          else
+            arrows = environment.arrows.map { |arrow| "#{arrow.from}-#{arrow.to}" }.join(' ')
+            shell_cmd = "undirender #{arrows}"
+            puts
+            puts pastel.cyan(`#{shell_cmd}`)
+          end
         when '.list' then
-          puts
-          environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
-          puts
+          if !environment.arrows.any?
+            err('no arrows yet')
+          else
+            puts
+            environment.arrows.each { |arrow| puts "  " + pastel.cyan(arrow) }
+          end
         when '.reset' then
           puts
           environment.clear!
-          puts
         when '.help' then
           puts
           puts help_message
-          puts
         else
           err("Unknown repl command #{input}")
         end
+        puts
       else
         begin
           result  = @processor.evaluate(input)

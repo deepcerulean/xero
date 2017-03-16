@@ -8,7 +8,7 @@ describe Repl do
 
   let(:processor) { double('Processor') }
 
-  it 'should do stuff' do
+  it 'should be programmatically halt-able' do
     expect(repl).to be_halted
     Thread.new { repl.launch! }
     sleep(0.2)

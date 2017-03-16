@@ -118,7 +118,6 @@ module Xero
       else
         raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
       end
-
     end
   end
 
@@ -343,8 +342,10 @@ module Xero
   end
 
   class Processor
+    attr_reader :environment
     def initialize(environment:)
-      @controller = Controller.new(environment)
+      @environment = environment
+      @controller = Controller.new(@environment)
       @evaluator  = Evaluator.new
     end
 
