@@ -17,6 +17,12 @@ module Xero
     end
   end
 
+  class SemicolonToken < Token
+    def self.pattern
+      /;/
+    end
+  end
+
   class LabelToken < Token
     def self.pattern
       /[a-zA-Z]+/
@@ -64,7 +70,7 @@ module Xero
     end
 
     def token_kinds
-      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken ]
+      [ LabelToken, ArrowToken, WhitespaceToken, ColonToken, DotToken, SemicolonToken ]
     end
   end
 end
