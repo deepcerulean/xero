@@ -25,16 +25,15 @@ a tiny, very pure categoreal abstract machine
 
 ## Ideas
 
-  A microlanguage designed for composition, intended not to do much on its own, but to possibly be embedded in a variety
-  of contexts -- I can imagine chaining tools or services together, but the core impulse here is that
-  composition really a very generic idea.
+  A microlanguage designed for composition, intended not to do much on its own, but to possibly be embedded in a variety of contexts.
+  I can imagine chaining tools or services together, but the core impulse here is that composition is really a very generic idea.
 
-  Largely a sandbox for experimenting with a variety of different category ideas. The next major targets are parens and a multiplcation
-  operator so we can model products and sums. Then exponents for function calls, and we may be Turing complete in some weird sense, but I
-  want to understand it much better. It sure seems like it's too pure to get any work done on its own, and needs an embedding semantics surrounding it.
+  Otherwise: largely a sandbox for experimenting with a variety of different category ideas.
+  I'd maybe like to use fat arrows to model arrows between arrows? But still unclear whether there 'ought' to be a distinction.
+  In that spirit the next major targets are parens and a multiplication operator so we can model products and sums.
+  Then exponents which are possibly a model of function application (so hopefully at this point whether we need a special 'functor' type should be marginally clearer?)
 
-  One idea is for something like the following to work -- Imagine we have a package
-  'My::Env' that we want to embed a Xero repl 'within'...
+  At any rate: one idea here is for something like the following to work. --Imagine we have a package 'My::Env' that runs some kind of simulation, and we want to embed a Xero repl 'within' to permit the user to construct and compose connections between things in the world...
 
     require 'xero'
 
@@ -46,7 +45,8 @@ a tiny, very pure categoreal abstract machine
       on(:arrow) do |left,right|
         world.connect(left,right)
       end
-      after_each { world.step }
+      # other events....
+      after_each(:arrow) { world.step }
     end
 
 ## Requirements
