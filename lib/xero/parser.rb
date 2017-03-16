@@ -24,7 +24,18 @@ module Xero
   class OperationNode < ExpressionNode; end
 
   # TODO parse out multiple statements separated by semicolons...
-  # class StatementNode < ExpressionNode
+  # class StatementNode < ExpressionNode; end
+  class StatementListNode < ExpressionNode
+    def initialize; end
+    def <<(stmt); statements.push(stmt); end
+    def statements; @stmts ||= [] end
+    def to_s(depth: 1)
+      tabs = "\n" + (' ' * depth)
+      tabs + "#{self.class.name}\n" +
+        tabs + "list:\n#{statements.map {|stmt| stmt.to_s(depth: depth+1) }.join('\n')}\n"
+    end
+    alias :inspect :to_s
+  end
 
   class Parser
     # take tokens, build ast -- and return root of the abstract syntax tree!
@@ -39,7 +50,18 @@ module Xero
         the_token = tokens.first
         return label(the_token) if label(the_token)
       else
-        operation(tokens)
+        statement_list(tokens) || operation(tokens)
+      end
+    end
+
+    def statement_list(tokens)
+      if tokens.any? { |token| token.is_a?(SemicolonToken) }
+        stmts = split(tokens, on: SemicolonToken)
+        stmt_list = StatementListNode.new
+        stmts.each do |stmt_tokens|
+          stmt_list << operation(stmt_tokens)
+        end
+        stmt_list
       end
     end
 
@@ -65,6 +87,21 @@ module Xero
         OperationNode.new(operator(second), left: label(first), right: expression(rest))
       end
     end
+
+    private
+    def split(tokens, on:)
+      arr_lst = []
+      curr = []
+      tokens.each do |token|
+        if token.is_a?(on)
+          arr_lst.push(curr)
+          curr = []
+        else
+          curr.push(token)
+        end
+      end
+      arr_lst.push(curr)
+      arr_lst
+    end
   end
 end
-
