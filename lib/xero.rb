@@ -85,6 +85,26 @@ module Xero
     def clear!
       @arrows = []
     end
+
+    def plot_route(from:, to:, depth: 1)
+      raise "Route would be too long!" if depth > 50
+      avail = available_objects(from: from)
+      if avail.any? { |obj| obj == to }
+        [from,to]
+      else
+        avail.detect do |next_obj|
+          if (route=plot_route(from: next_obj, to: to, depth: depth + 1))
+            return ([from] + route)
+          end
+        end
+      end
+    end
+
+    def available_objects(from:)
+      arrows.
+        select { |arrow| arrow.from == from }.
+        map { |arrow| arrow.to }
+    end
   end
 
   class Controller
@@ -104,6 +124,14 @@ module Xero
         ok("arrow #{matching_arrow}")
       else
         err("no entity exists called '#{name}'")
+      end
+    end
+
+    def query_route(origin:, destination:)
+      if (route = @env.plot_route(from: origin, to: destination))
+        ok(route.join(' -> '))
+      else
+        err("no route found from #{origin} to #{destination}")
       end
     end
 
@@ -226,6 +254,11 @@ module Xero
         draw_named_arrow_links(
           name: command.name,
           objects: command.objects
+        )
+      when QueryRouteCommand then
+        query_route(
+          origin: command.origin,
+          destination: command.destination
         )
       else
         raise("Unknown command type, may need to implement a command handler for #{command.class}..")

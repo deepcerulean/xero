@@ -72,7 +72,13 @@ module Xero
 
     # deref an arrow by source and target (iff it can be found by composition of already drawn arrows)
     def route(ast)
-      raise 'not impl'
+      if ast.left.is_a?(LabelNode) && ast.right.is_a?(LabelNode)
+        QueryRouteCommand.new(origin: ast.left.value, destination: ast.right.value)
+      else
+        raise 'can only route between labelled objs'
+      end
+      # binding.pry
+      # raise 'not impl'
     end
 
     def analyze_operation(ast)

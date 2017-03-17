@@ -157,10 +157,18 @@ describe Processor do
     expect(environment.objects).to contain_exactly('x', 'y', 'z')
   end
 
-  xit 'will answer a route query' do
-    processor.evaluate('a->b->c')
+  it 'will answer a route query' do
+    processor.evaluate('a->b->c->d; e->f')
+
     result = processor.evaluate('a--c')
     expect(result).to be_successful
-    expect(result.solution).to contain_exactly('a', 'b', 'c')
+    expect(result.message).to eq('a -> b -> c')
+
+    result = processor.evaluate('a--d')
+    expect(result).to be_successful
+    expect(result.message).to eq('a -> b -> c -> d')
+
+    result = processor.evaluate('a--f')
+    expect(result).not_to be_successful
   end
 end
