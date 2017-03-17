@@ -17,11 +17,12 @@ a tiny, very pure categoreal abstract machine
 ## Features
 
   - labelled *objects* strings made only of letters (a-zA-Z)
-  - define arrows with one or several '->' (`X -> Y -> Z`)
-  - name arrows with ':' (`f: a->b`)
-  - compose arrows with '.' ('g: b->c; g.f')
-  - statement lists with ';' (`a->b; c->d; g.f`)
-  - interactive repl for exploration
+  - define arrows with one or several arrow-signs (`X -> Y -> Z`)
+  - name arrows with colons (`f: a->b`)
+  - compose arrows with dots (`g: b->c; g.f`)
+  - statement lists with semicolons (`a->b; c->d; g.f`)
+  - dereference/routing query with double dash (`a -- b` to find a route from obj a to b)
+  - interactive repl for exploration/visualization
 
 ## Ideas
 
