@@ -16,7 +16,7 @@ module Xero
     end
 
     protected
-    def definition(ast)
+    def defn(ast)
       raise "Definition name #{label} is not a label" unless ast.left.is_a?(LabelNode)
       name = ast.left.value
       arrow_cmd = analyze(ast.right)
@@ -39,7 +39,6 @@ module Xero
         DrawArrowCommand.new(source: ast.left.value, target: ast.right.value)
       else
         if ast.left.is_a?(LabelNode)
-          # try to process the right into a series of draw arrow commands...
           right_cmd = analyze(ast.right)
           case right_cmd
           when DrawArrowCommand # meld with this one arrow, linking 3 objs
@@ -77,18 +76,16 @@ module Xero
       else
         raise 'can only route between labelled objs'
       end
-      # binding.pry
-      # raise 'not impl'
     end
 
     def analyze_operation(ast)
       case ast.value
-      when :defn  then definition(ast)
+      when :defn  then defn(ast)
       when :arrow then arrow(ast)
       when :dot   then dot(ast)
       when :route then route(ast)
       else
-        raise "unknown operation type #{ast.value} (expecting :defn or :arrow): #{ast}"
+        raise "unknown operation type #{ast.value} (expecting :defn, :arrow, :dot, :route): #{ast}"
       end
     end
   end
